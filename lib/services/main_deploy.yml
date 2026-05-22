@@ -1,0 +1,61 @@
+name: DriFt Enterprise Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  flutter_delivery:
+    name: Build & Deploy Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.19.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze & Lint
+        run: flutter analyze
+
+      - name: Run Unit Tests
+        run: flutter test
+
+      - name: Build Web (Dashboards)
+        run: flutter build web --release --base-href "/drift_app/"
+
+      - name: Build Android APK (App Mobile)
+        run: flutter build apk --release
+
+      - name: Deploy to GitHub Pages (Visualisation des Interfaces)
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: build/web
+          branch: gh-pages
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-mobile-app
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  backend_quality:
+    name: Rust Backend Security Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run Cargo Check
+        run: echo "Vérification de la sécurité du code Rust..." # Sera remplacé par cargo check lors de l'init rust
