@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'dart:async';
 import '../models/location_model.dart';
 
 class LocationService extends ChangeNotifier {
   Location? _currentLocation;
   bool _isListening = false;
   String? _error;
+  Timer? _locationTimer;
 
   Location? get currentLocation => _currentLocation;
   bool get isListening => _isListening;
@@ -53,21 +53,13 @@ class LocationService extends ChangeNotifier {
     if (_isListening) return;
     _isListening = true;
 
-    // Replace with actual geolocator position stream when backend is available.
-    // Geolocator.getPositionStream().listen((Position position) {
-    //   _currentLocation = Location(
-    //     latitude: position.latitude,
-    //     longitude: position.longitude,
-    //     address: await _getAddressFromCoordinates(position.latitude, position.longitude),
-    //     city: "Abidjan", // city is fixed in demo mode
-    //     country: "Côte d'Ivoire",
-    //   );
-    //   notifyListeners();
-    // });
-
-    // For now, keep simulated data but remove the mock notice
-    Future.delayed(const Duration(seconds: 5), () {
-      if (_isListening && _currentLocation != null) {
+    // Utilisation d'un Timer périodique pour la simulation (plus propre que la récursion)
+    _locationTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!_isListening) {
+        timer.cancel();
+        return;
+      }
+      if (_currentLocation != null) {
         _currentLocation = Location(
           latitude: _currentLocation!.latitude + 0.0001,
           longitude: _currentLocation!.longitude + 0.0001,
@@ -76,16 +68,15 @@ class LocationService extends ChangeNotifier {
           country: _currentLocation!.country,
         );
         notifyListeners();
-        startLocationListener();
       }
     });
-
-    notifyListeners();
   }
 
   /// Arrête l'écoute de la position
   void stopLocationListener() {
     _isListening = false;
+    _locationTimer?.cancel();
+    _locationTimer = null;
     notifyListeners();
   }
 

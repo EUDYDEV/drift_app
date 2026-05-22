@@ -95,7 +95,7 @@ class _PaiementPageState extends State<PaiementPage> {
               height: 40,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.1),
+                color: Colors.white.withOpacity(0.1),
               ),
               child: const Icon(Icons.arrow_back_ios_new,
                   color: Colors.white, size: 18),
@@ -145,7 +145,7 @@ class _PaiementPageState extends State<PaiementPage> {
       decoration: BoxDecoration(
         color: AppColors.lightGray,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: item.color.withValues(alpha: 0.2), width: 1),
+        border: Border.all(color: item.color.withOpacity(0.2), width: 1),
       ),
       child: Row(
         children: [
@@ -153,7 +153,7 @@ class _PaiementPageState extends State<PaiementPage> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: item.color.withValues(alpha: 0.12),
+              color: item.color.withOpacity(0.12),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(item.icon, color: item.color, size: 20),
@@ -216,7 +216,7 @@ class _PaiementPageState extends State<PaiementPage> {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
+                  color: Colors.black.withOpacity(0.06),
                   blurRadius: 14,
                   offset: const Offset(0, 4),
                 ),
@@ -244,9 +244,8 @@ class _PaiementPageState extends State<PaiementPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         decoration: BoxDecoration(
-          color: isSelected
-              ? method.color.withValues(alpha: 0.06)
-              : Colors.transparent,
+          color:
+              isSelected ? method.color.withOpacity(0.06) : Colors.transparent,
           borderRadius: BorderRadius.vertical(
             top: index == 0 ? const Radius.circular(20) : Radius.zero,
             bottom: isLast ? const Radius.circular(20) : Radius.zero,
@@ -262,7 +261,7 @@ class _PaiementPageState extends State<PaiementPage> {
               width: 44,
               height: 32,
               decoration: BoxDecoration(
-                color: method.color.withValues(alpha: 0.12),
+                color: method.color.withOpacity(0.12),
                 borderRadius: BorderRadius.circular(8),
                 border: isSelected
                     ? Border.all(color: method.color, width: 1.5)
@@ -404,7 +403,7 @@ class _PaiementPageState extends State<PaiementPage> {
           borderRadius: BorderRadius.circular(22),
           boxShadow: [
             BoxShadow(
-              color: AppColors.gradientBlue.withValues(alpha: 0.3),
+              color: AppColors.gradientBlue.withOpacity(0.3),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
@@ -475,8 +474,8 @@ class _PaiementPageState extends State<PaiementPage> {
           boxShadow: [
             BoxShadow(
               color: _isProcessing
-                  ? AppColors.grayText.withValues(alpha: 0.3)
-                  : AppColors.orange.withValues(alpha: 0.45),
+                  ? AppColors.grayText.withOpacity(0.3)
+                  : AppColors.orange.withOpacity(0.45),
               blurRadius: 18,
               offset: const Offset(0, 7),
             ),
@@ -535,7 +534,7 @@ class _PaiementPageState extends State<PaiementPage> {
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: AppColors.green.withValues(alpha: 0.4),
+            color: AppColors.green.withOpacity(0.4),
             blurRadius: 18,
             offset: const Offset(0, 7),
           ),

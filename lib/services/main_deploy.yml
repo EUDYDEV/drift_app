@@ -6,12 +6,21 @@ on:
   pull_request:
     branches: [ main ]
 
+# Autorise le déploiement vers GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   flutter_delivery:
     name: Build & Deploy Frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -32,20 +41,31 @@ jobs:
       - name: Build Web (Dashboards)
         run: flutter build web --release --base-href "/drift_app/"
 
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
       - name: Build Android APK (App Mobile)
         run: flutter build apk --release
-
-      - name: Deploy to GitHub Pages (Visualisation des Interfaces)
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          folder: build/web
-          branch: gh-pages
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: drift-mobile-app
           path: build/app/outputs/flutter-apk/app-release.apk
+
+  deploy_web:
+    name: Publish Web Dashboard
+    needs: flutter_delivery
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   backend_quality:
     name: Rust Backend Security Check

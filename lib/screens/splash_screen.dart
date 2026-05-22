@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../theme/app_colors.dart';
 import 'main_navigation_page.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -83,8 +82,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-          const Color(0xFFFF751F), // Correction de l'opacité (FF au lieu de 00)
+      backgroundColor: const Color(0xFFFF751F),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
