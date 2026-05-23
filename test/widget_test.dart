@@ -5,5 +5,6 @@ void main() {
   testWidgets('DriFt app launches', (WidgetTester tester) async {
     await tester.pumpWidget(const DriFtApp());
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 3100));
   });
 }
