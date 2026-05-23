@@ -127,7 +127,7 @@ class _VoyagesPageState extends State<VoyagesPage>
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
           color: active
-              ? AppColors.gradientBlue.withOpacity(0.1)
+              ? AppColors.gradientBlue.withValues(alpha:0.1)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
@@ -249,7 +249,7 @@ class _VoyagesPageState extends State<VoyagesPage>
           border: Border.all(color: Colors.grey[200]!),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.05), blurRadius: 10)
+                color: Colors.black.withValues(alpha:0.05), blurRadius: 10)
           ]),
       child: Row(
         children: [
@@ -257,7 +257,7 @@ class _VoyagesPageState extends State<VoyagesPage>
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                  color: color.withOpacity(0.1), shape: BoxShape.circle),
+                  color: color.withValues(alpha:0.1), shape: BoxShape.circle),
               child: Icon(icon, color: color, size: 20)),
           const SizedBox(width: 14),
           Expanded(
@@ -276,7 +276,7 @@ class _VoyagesPageState extends State<VoyagesPage>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                color: color.withValues(alpha:0.1),
                 borderRadius: BorderRadius.circular(8)),
             child: Text(status,
                 style: GoogleFonts.montserrat(
@@ -331,12 +331,12 @@ class _VoyagesPageState extends State<VoyagesPage>
         color: AppColors.white,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(
-          color: AppColors.gradientBlue.withOpacity(0.22),
+          color: AppColors.gradientBlue.withValues(alpha:0.22),
           width: 1.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.gradientBlue.withOpacity(0.14),
+            color: AppColors.gradientBlue.withValues(alpha:0.14),
             blurRadius: 22,
             offset: const Offset(0, 6),
           ),
@@ -481,14 +481,14 @@ class _VoyagesPageState extends State<VoyagesPage>
                       height: 12,
                       decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: AppColors.gradientBlue.withOpacity(0.2),
+                          color: AppColors.gradientBlue.withValues(alpha:0.2),
                           border: Border.all(
                               color: AppColors.gradientBlue, width: 3)),
                     ),
                     Container(
                       width: 2,
                       height: 24,
-                      color: AppColors.lightText.withOpacity(0.5),
+                      color: AppColors.lightText.withValues(alpha:0.5),
                     ),
                     const Icon(Icons.location_on,
                         color: AppColors.orange, size: 16),
@@ -526,7 +526,7 @@ class _VoyagesPageState extends State<VoyagesPage>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
-                          color: AppColors.green.withOpacity(0.1),
+                          color: AppColors.green.withValues(alpha:0.1),
                           borderRadius: BorderRadius.circular(6)),
                       child: Text('20:00',
                           style: GoogleFonts.montserrat(
@@ -562,7 +562,7 @@ class _VoyagesPageState extends State<VoyagesPage>
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-            color: AppColors.gradientBlue.withOpacity(0.3),
+            color: AppColors.gradientBlue.withValues(alpha:0.3),
             blurRadius: 8,
             offset: const Offset(0, 3),
           ),
@@ -594,7 +594,7 @@ class _VoyagesPageState extends State<VoyagesPage>
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: AppColors.orange.withOpacity(0.45),
+            color: AppColors.orange.withValues(alpha:0.45),
             blurRadius: 18,
             offset: const Offset(0, 7),
           ),

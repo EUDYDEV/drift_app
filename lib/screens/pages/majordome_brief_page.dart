@@ -38,7 +38,7 @@ class MajordomeBriefPage extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: CircleAvatar(
-              backgroundColor: Colors.red.withOpacity(0.1),
+              backgroundColor: Colors.red.withValues(alpha:0.1),
               child: const Icon(Icons.sos, color: Colors.red, size: 28),
             ),
           ),
@@ -99,7 +99,7 @@ class MajordomeBriefPage extends StatelessWidget {
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: AppColors.gradientBlue.withOpacity(0.3),
+            color: AppColors.gradientBlue.withValues(alpha:0.3),
             blurRadius: 20,
             offset: const Offset(0, 10),
           ),
@@ -114,7 +114,7 @@ class MajordomeBriefPage extends StatelessWidget {
               Text(
                 'RESTE À VIVRE',
                 style: GoogleFonts.montserrat(
-                  color: Colors.white.withOpacity(0.8),
+                  color: Colors.white.withValues(alpha:0.8),
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.2,
@@ -139,7 +139,7 @@ class MajordomeBriefPage extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
             child: LinearProgressIndicator(
               value: 0.6,
-              backgroundColor: Colors.white.withOpacity(0.2),
+              backgroundColor: Colors.white.withValues(alpha:0.2),
               valueColor: const AlwaysStoppedAnimation<Color>(AppColors.orange),
               minHeight: 8,
             ),
@@ -148,7 +148,7 @@ class MajordomeBriefPage extends StatelessWidget {
           Text(
             'Budget resto épuisé : Suggestions Street-food activées.',
             style: GoogleFonts.montserrat(
-              color: Colors.white.withOpacity(0.9),
+              color: Colors.white.withValues(alpha:0.9),
               fontSize: 11,
               fontStyle: FontStyle.italic,
             ),
@@ -172,14 +172,14 @@ class MajordomeBriefPage extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.2)),
+        border: Border.all(color: color.withValues(alpha:0.2)),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
+              color: color.withValues(alpha:0.1),
               borderRadius: BorderRadius.circular(15),
             ),
             child: Icon(icon, color: color),
@@ -223,7 +223,7 @@ class MajordomeBriefPage extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)
+          BoxShadow(color: Colors.black.withValues(alpha:0.05), blurRadius: 10)
         ],
       ),
       child: Row(

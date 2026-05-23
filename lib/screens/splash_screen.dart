@@ -125,7 +125,7 @@ class _SplashScreenState extends State<SplashScreen>
                 style: GoogleFonts.montserrat(
                   fontSize: 15,
                   fontWeight: FontWeight.w300,
-                  color: Colors.white.withOpacity(0.88),
+                  color: Colors.white.withValues(alpha:0.88),
                   letterSpacing: 3.5,
                 ),
               ),
@@ -146,8 +146,8 @@ class _WavePainter extends CustomPainter {
     final paint = Paint()
       ..shader = LinearGradient(
         colors: [
-          Colors.white.withOpacity(0.2),
-          Colors.white.withOpacity(0.8),
+          Colors.white.withValues(alpha:0.2),
+          Colors.white.withValues(alpha:0.8),
         ],
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
       ..style = PaintingStyle.stroke

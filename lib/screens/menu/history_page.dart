@@ -91,7 +91,7 @@ class HistoryPage extends StatelessWidget {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
+                color: Colors.white.withValues(alpha:0.15),
                 shape: BoxShape.circle,
               ),
               child: const Icon(Icons.arrow_back_ios_new,
@@ -113,7 +113,7 @@ class HistoryPage extends StatelessWidget {
               Text(
                 'Vos réservations passées',
                 style: GoogleFonts.montserrat(
-                  color: Colors.white.withOpacity(0.7),
+                  color: Colors.white.withValues(alpha:0.7),
                   fontSize: 11,
                 ),
               ),
@@ -143,9 +143,9 @@ class HistoryPage extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
+        color: color.withValues(alpha:0.08),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.18)),
+        border: Border.all(color: color.withValues(alpha:0.18)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -178,7 +178,7 @@ class HistoryPage extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.07),
+            color: Colors.black.withValues(alpha:0.07),
             blurRadius: 14,
             offset: const Offset(0, 4),
           ),
@@ -220,7 +220,7 @@ class HistoryPage extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.1),
+                        color: statusColor.withValues(alpha:0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
