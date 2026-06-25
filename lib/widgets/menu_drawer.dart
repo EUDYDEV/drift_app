@@ -7,7 +7,6 @@ import '../screens/menu/profile_page.dart';
 import '../screens/menu/premium_page.dart';
 import '../screens/menu/help_page.dart';
 import '../screens/menu/history_page.dart';
-import '../screens/menu/partner_dashboard_page.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/pages/majordome_brief_page.dart';
 import '../services/auth_service.dart';
@@ -17,6 +16,8 @@ class MenuDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthService>();
+
     return Align(
       alignment: Alignment.centerLeft,
       child: Material(
@@ -42,49 +43,45 @@ class MenuDrawer extends StatelessWidget {
                         Navigator.push(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => const ProfilePage()));
+                                builder: (_) => auth.isAuthenticated
+                                    ? const ProfilePage()
+                                    : const LoginScreen()));
                       }),
-                      _buildMenuItem(
-                          context, Icons.settings_outlined, 'Paramètres', () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const SettingsPage()));
-                      }),
-                      _buildMenuItem(
-                          context, Icons.star_border, 'Abonnement VIP', () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const PremiumPage()));
-                      }),
-                      _buildMenuItem(
-                          context, Icons.hotel_class_outlined, 'Mode Majordome',
-                          () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const MajordomeBriefPage()));
-                      }),
-                      _buildMenuItem(context, Icons.space_dashboard_outlined,
-                          'Dashboard partenaires', () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const PartnerDashboardPage()));
-                      }),
-                      _buildMenuItem(
-                          context, Icons.history, 'Historique des trajets', () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const HistoryPage()));
-                      }),
+                      if (auth.isAuthenticated) ...[
+                        _buildMenuItem(
+                            context, Icons.settings_outlined, 'Paramètres', () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const SettingsPage()));
+                        }),
+                        _buildMenuItem(
+                            context, Icons.star_border, 'Abonnement VIP', () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const PremiumPage()));
+                        }),
+                        _buildMenuItem(context, Icons.hotel_class_outlined,
+                            'Mode Majordome', () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const MajordomeBriefPage()));
+                        }),
+                        _buildMenuItem(
+                            context, Icons.history, 'Historique des trajets',
+                            () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const HistoryPage()));
+                        }),
+                      ],
                       _buildMenuItem(
                           context, Icons.help_outline, 'Aide & Assistance', () {
                         Navigator.pop(context);
@@ -97,15 +94,17 @@ class MenuDrawer extends StatelessWidget {
                   ),
                 ),
                 const Divider(color: Color(0xFFEEEEEE)),
-                if (context.watch<AuthService>().isAuthenticated)
+                if (auth.isAuthenticated)
                   Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                    child: _buildMenuItem(context, Icons.logout, 'Déconnexion', () {
-                      context.read<AuthService>().logout();
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 20),
+                    child: _buildMenuItem(context, Icons.logout, 'Déconnexion',
+                        () {
+                      auth.logout();
                       Navigator.pushAndRemoveUntil(
                           context,
-                          MaterialPageRoute(builder: (_) => const LoginScreen()),
+                          MaterialPageRoute(
+                              builder: (_) => const LoginScreen()),
                           (route) => false);
                     }, color: Colors.red),
                   ),

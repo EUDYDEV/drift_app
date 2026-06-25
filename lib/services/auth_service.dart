@@ -19,9 +19,10 @@ class AuthService extends ChangeNotifier {
   String _userName = '';
   String _userEmail = '';
   bool _isVip = false;
+  bool _sessionValidated = false;
   bool _initialized = false;
 
-  bool get isAuthenticated => _token != null;
+  bool get isAuthenticated => _token != null && _sessionValidated;
   String get userName => _userName;
   String get userEmail => _userEmail;
   bool get isVip => isAuthenticated && _isVip;
@@ -35,6 +36,7 @@ class AuthService extends ChangeNotifier {
     _initialized = true;
 
     _token = await readToken();
+    _sessionValidated = false;
     if (_token != null) {
       await _refreshProfile(clearTokenOnUnauthorized: true);
     }
@@ -67,7 +69,8 @@ class AuthService extends ChangeNotifier {
       );
 
       if (response.statusCode != 201) {
-        debugPrint('Echec inscription: ${response.statusCode} ${response.body}');
+        debugPrint(
+            'Echec inscription: ${response.statusCode} ${response.body}');
         return false;
       }
 
@@ -171,6 +174,7 @@ class AuthService extends ChangeNotifier {
     }
 
     _token = token;
+    _sessionValidated = true;
     await _storage.write(key: _tokenKey, value: token);
     _applyUser(
       userJson,
@@ -196,6 +200,7 @@ class AuthService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = _decodeJson(response.body);
         _token = token;
+        _sessionValidated = true;
         _applyUser(data);
         return true;
       }
@@ -228,6 +233,7 @@ class AuthService extends ChangeNotifier {
 
   Future<void> _clearSession({bool notify = true}) async {
     _token = null;
+    _sessionValidated = false;
     _userName = '';
     _userEmail = '';
     _isVip = false;

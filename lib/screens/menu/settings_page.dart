@@ -9,7 +9,6 @@ import 'premium_page.dart';
 import 'help_page.dart';
 import 'payment_methods_page.dart';
 import 'history_page.dart';
-import 'partner_dashboard_page.dart';
 import '../pages/majordome_brief_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -90,13 +89,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   context,
                   MaterialPageRoute(
                       builder: (_) => const MajordomeBriefPage()));
-            }),
-            _buildSettingsTile(context, Icons.space_dashboard_outlined,
-                'Dashboard partenaires', onTap: () {
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const PartnerDashboardPage()));
             }),
             _buildSettingsTile(context, Icons.star_border, 'Abonnement Premium',
                 iconColor: AppColors.orange, onTap: () {
@@ -217,8 +209,8 @@ class _SettingsPageState extends State<SettingsPage> {
           subtitle: subtitle != null
               ? Text(
                   subtitle,
-                  style:
-                      GoogleFonts.montserrat(fontSize: 12, color: AppColors.grayText),
+                  style: GoogleFonts.montserrat(
+                      fontSize: 12, color: AppColors.grayText),
                 )
               : null,
           trailing: trailing ??
