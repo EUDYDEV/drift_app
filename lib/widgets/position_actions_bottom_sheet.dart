@@ -155,7 +155,7 @@ class _PositionActionsSheetState extends State<_PositionActionsSheet> {
               ),
               _action(
                 icon: Icons.search,
-                title: 'Modifier votre position / Rechercher',
+                title: 'Modifier votre position',
                 onTap: _search,
               ),
               _action(

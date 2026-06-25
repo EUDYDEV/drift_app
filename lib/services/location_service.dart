@@ -50,7 +50,7 @@ class LocationService extends ChangeNotifier {
             position.latitude, position.longitude);
         if (placemarks.isNotEmpty) {
           geo.Placemark place = placemarks[0];
-          address = "${place.street}, ${place.locality}";
+          address = _formatPlacemarkAddress(place);
           city = place.locality ?? place.subAdministrativeArea;
           country = place.country;
         }
@@ -91,7 +91,7 @@ class LocationService extends ChangeNotifier {
             position.latitude, position.longitude);
         if (placemarks.isNotEmpty) {
           geo.Placemark place = placemarks[0];
-          address = "${place.street}, ${place.locality}";
+          address = _formatPlacemarkAddress(place);
           city = place.locality ?? place.subAdministrativeArea;
           country = place.country;
         }
@@ -160,7 +160,8 @@ class LocationService extends ChangeNotifier {
     String fallbackAddress = 'Destination partenaire',
   }) async {
     try {
-      final placemarks = await geo.placemarkFromCoordinates(latitude, longitude);
+      final placemarks =
+          await geo.placemarkFromCoordinates(latitude, longitude);
       if (placemarks.isEmpty) {
         return AppLocation(
           latitude: latitude,
@@ -170,10 +171,7 @@ class LocationService extends ChangeNotifier {
       }
 
       final place = placemarks.first;
-      final address = [
-        place.street,
-        place.locality,
-      ].whereType<String>().where((part) => part.trim().isNotEmpty).join(', ');
+      final address = _formatPlacemarkAddress(place);
 
       return AppLocation(
         latitude: latitude,
@@ -200,6 +198,29 @@ class LocationService extends ChangeNotifier {
         distanceFilter: 10, // Mise à jour tous les 10 mètres
       ),
     );
+  }
+
+  String _formatPlacemarkAddress(geo.Placemark place) {
+    final parts = <String?>[
+      place.street,
+      place.subLocality,
+      place.locality,
+      place.subAdministrativeArea,
+    ];
+    final uniqueParts = <String>[];
+
+    for (final part in parts) {
+      final value = part?.trim();
+      if (value == null || value.isEmpty) continue;
+      if (uniqueParts.any(
+        (existing) => existing.toLowerCase() == value.toLowerCase(),
+      )) {
+        continue;
+      }
+      uniqueParts.add(value);
+    }
+
+    return uniqueParts.isEmpty ? 'Position actuelle' : uniqueParts.join(', ');
   }
 
   @override
