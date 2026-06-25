@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../theme/app_colors.dart';
-import '../auth/login_page.dart';
-import '../../models/user_session.dart';
+import '../auth/login_screen.dart';
+import '../../services/auth_service.dart';
+import '../menu/profile_page.dart';
 import 'premium_page.dart';
 import 'help_page.dart';
 import 'payment_methods_page.dart';
@@ -23,6 +25,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthService>();
+
     return Scaffold(
       backgroundColor: AppColors.lightGray,
       appBar: AppBar(
@@ -47,42 +51,62 @@ class _SettingsPageState extends State<SettingsPage> {
             _buildSettingsTile(
                 context, Icons.person_outline, 'Informations personnelles',
                 onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                  content: Text('Ouverture des informations personnelles...')));
+              if (auth.isAuthenticated) {
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const ProfilePage()));
+              } else {
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen()));
+              }
             }),
             _buildSettingsTile(
                 context, Icons.payment_outlined, 'Moyens de paiement',
                 onTap: () {
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => const PaymentMethodsPage()));
+              if (auth.isAuthenticated) {
+                Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const PaymentMethodsPage()));
+              } else {
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen()));
+              }
             }),
             _buildSettingsTile(
                 context, Icons.history, 'Historique des réservations',
                 onTap: () {
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const HistoryPage()));
+              if (auth.isAuthenticated) {
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const HistoryPage()));
+              } else {
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen()));
+              }
             }),
             _buildSettingsTile(
                 context, Icons.room_service_outlined, 'Mode Majordome',
                 onTap: () {
               Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const MajordomeBriefPage()));
+                  MaterialPageRoute(
+                      builder: (_) => const MajordomeBriefPage()));
             }),
-            _buildSettingsTile(
-                context, Icons.space_dashboard_outlined,
+            _buildSettingsTile(context, Icons.space_dashboard_outlined,
                 'Dashboard partenaires', onTap: () {
               Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const PartnerDashboardPage()));
+                  MaterialPageRoute(
+                      builder: (_) => const PartnerDashboardPage()));
             }),
             _buildSettingsTile(context, Icons.star_border, 'Abonnement Premium',
                 iconColor: AppColors.orange, onTap: () {
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const PremiumPage()));
+              if (auth.isAuthenticated) {
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const PremiumPage()));
+              } else {
+                Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const LoginScreen()));
+              }
             }),
             const SizedBox(height: 20),
             _buildSectionTitle('Préférences'),
@@ -115,7 +139,10 @@ class _SettingsPageState extends State<SettingsPage> {
                   content: Text('Politique de confidentialité...')));
             }),
             const SizedBox(height: 40),
-            _buildLogoutButton(context),
+            if (auth.isAuthenticated)
+              _buildLogoutButton(context)
+            else
+              _buildLoginButton(context),
             const SizedBox(
                 height:
                     120), // Espace suffisant pour ne pas être caché par la barre de navigation
@@ -161,34 +188,80 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ],
       ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: iconColor?.withValues(alpha: 0.1) ?? AppColors.lightGray,
-            borderRadius: BorderRadius.circular(10),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-          child: Icon(icon, color: iconColor ?? AppColors.darkText, size: 20),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: iconColor?.withValues(alpha: 0.1) ?? AppColors.lightGray,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: iconColor ?? AppColors.darkText, size: 20),
+          ),
+          title: Text(
+            title,
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.darkText,
+            ),
+          ),
+          subtitle: subtitle != null
+              ? Text(
+                  subtitle,
+                  style:
+                      GoogleFonts.montserrat(fontSize: 12, color: AppColors.grayText),
+                )
+              : null,
+          trailing: trailing ??
+              const Icon(Icons.chevron_right, color: AppColors.lightText),
+          onTap: onTap,
         ),
-        title: Text(
-          title,
-          style: GoogleFonts.montserrat(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: AppColors.darkText,
+      ),
+    );
+  }
+
+  Widget _buildLoginButton(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 20),
+        height: 56,
+        decoration: BoxDecoration(
+          gradient: AppColors.blueViolet,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.gradientBlue.withValues(alpha: 0.25),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            'SE CONNECTER',
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              letterSpacing: 1,
+            ),
           ),
         ),
-        subtitle: subtitle != null
-            ? Text(
-                subtitle,
-                style: GoogleFonts.montserrat(
-                    fontSize: 12, color: AppColors.grayText),
-              )
-            : null,
-        trailing: trailing ??
-            const Icon(Icons.chevron_right, color: AppColors.lightText),
-        onTap: onTap,
       ),
     );
   }
@@ -196,9 +269,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Widget _buildLogoutButton(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        UserSession.logout();
+        context.read<AuthService>().logout();
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginPage()),
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
           (route) => false,
         );
       },

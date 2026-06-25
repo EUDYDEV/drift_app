@@ -1,11 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../theme/app_colors.dart';
+import 'package:provider/provider.dart';
+
 import '../models/cart_model.dart';
+import '../services/auth_service.dart';
+import '../services/partner_catalog_service.dart';
+import '../services/partner_wifi_geofence_service.dart';
+import '../services/payment_service.dart';
+import '../services/secure_ticket_service.dart';
+import '../theme/app_colors.dart';
 
 class PaiementPage extends StatefulWidget {
   final List<CartItem> items;
-  const PaiementPage({super.key, required this.items});
+
+  const PaiementPage({
+    super.key,
+    required this.items,
+  });
 
   @override
   State<PaiementPage> createState() => _PaiementPageState();
@@ -13,30 +24,139 @@ class PaiementPage extends StatefulWidget {
 
 class _PaiementPageState extends State<PaiementPage> {
   int _selectedPayment = 0;
-  final _nameCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
+  final TextEditingController _nameCtrl = TextEditingController();
+  final TextEditingController _phoneCtrl = TextEditingController();
+  final TextEditingController _emailCtrl = TextEditingController();
+
+  late List<CartItem> _items;
+
   bool _confirmed = false;
   bool _isProcessing = false;
 
-  static const List<_PaymentMethod> _methods = [
+  static const List<_PaymentMethod> _methods = <_PaymentMethod>[
     _PaymentMethod('VISA', Icons.credit_card, 'Carte Visa', Color(0xFF1A1F71)),
     _PaymentMethod('MC', Icons.credit_card, 'MasterCard', Color(0xFFEB001B)),
     _PaymentMethod(
-        'OM', Icons.phone_android, 'Orange Money', Color(0xFFFF7900)),
+      'OM',
+      Icons.phone_android,
+      'Orange Money',
+      Color(0xFFFF7900),
+    ),
   ];
 
-  int get _total => widget.items.fold(0, (s, i) => s + i.priceValue);
+  int get _total => _items.fold(0, (sum, item) => sum + item.priceValue);
 
-  String get _totalFormatted {
-    final n = _total;
-    final s = n.toString();
-    final buf = StringBuffer();
-    for (int i = 0; i < s.length; i++) {
-      if (i > 0 && (s.length - i) % 3 == 0) buf.write(' ');
-      buf.write(s[i]);
+  String get _totalFormatted => CartModel.formatCurrency(_total);
+
+  _PaymentMethod get _selectedMethod => _methods[_selectedPayment];
+
+  @override
+  void initState() {
+    super.initState();
+    _items = List<CartItem>.from(widget.items);
+    _refreshPartnerPricing();
+  }
+
+  Future<void> _refreshPartnerPricing() async {
+    try {
+      final synchronized = await context
+          .read<PartnerCatalogService>()
+          .synchronizeCartItems(_items);
+
+      if (!mounted) return;
+      setState(() {
+        _items = synchronized;
+      });
+      CartModel.addAll(synchronized);
+    } catch (error) {
+      debugPrint('Partner pricing sync skipped: $error');
     }
-    return '${buf.toString()} FCFA';
+  }
+
+  Future<void> _handleConfirmedPayment() async {
+    setState(() => _isProcessing = true);
+
+    await _refreshPartnerPricing();
+
+    if (!mounted) return;
+
+    final authService = context.read<AuthService>();
+    final checkoutResult = await context.read<PaymentService>().checkout(
+          items: _items,
+          paymentCode: _selectedMethod.code,
+          paymentLabel: _selectedMethod.label,
+          fullName: _nameCtrl.text,
+          phoneNumber: _phoneCtrl.text,
+          email: _emailCtrl.text,
+          authService: authService,
+        );
+
+    if (!mounted) return;
+
+    if (checkoutResult.isPending) {
+      setState(() => _isProcessing = false);
+      await _showStatusDialog(
+        title: 'Paiement en attente',
+        message: checkoutResult.message,
+      );
+      return;
+    }
+
+    if (!checkoutResult.isSuccess) {
+      setState(() => _isProcessing = false);
+      await _showStatusDialog(
+        title: 'Paiement echoue',
+        message: checkoutResult.message,
+      );
+      return;
+    }
+
+    try {
+      final secureTicketService = context.read<SecureTicketService>();
+      final issuedTickets = await secureTicketService.issueTickets(
+        items: _items,
+        authService: authService,
+      );
+      final hydratedItems = secureTicketService.hydrateCartItemsWithTickets(
+        items: _items,
+        tickets: issuedTickets,
+      );
+      _items = hydratedItems;
+      CartModel.addAll(hydratedItems);
+      CartModel.attachIssuedTickets(issuedTickets);
+      await context
+          .read<PartnerWifiGeofenceService>()
+          .activateTickets(issuedTickets);
+    } catch (error) {
+      debugPrint('Secure ticket generation skipped: $error');
+    }
+
+    CartModel.removeMany(_items.map((item) => item.id));
+
+    if (!mounted) return;
+    setState(() {
+      _isProcessing = false;
+      _confirmed = true;
+    });
+  }
+
+  Future<void> _showStatusDialog({
+    required String title,
+    required String message,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Fermer'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -81,7 +201,6 @@ class _PaiementPageState extends State<PaiementPage> {
     );
   }
 
-  // ─── Header ───────────────────────────────────────────────────────────────
   Widget _buildHeader(BuildContext context) {
     return Container(
       color: const Color(0xFF1A1A1A),
@@ -95,15 +214,18 @@ class _PaiementPageState extends State<PaiementPage> {
               height: 40,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha:0.1),
+                color: Colors.white.withValues(alpha: 0.1),
               ),
-              child: const Icon(Icons.arrow_back_ios_new,
-                  color: Colors.white, size: 18),
+              child: const Icon(
+                Icons.arrow_back_ios_new,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
           ),
           const SizedBox(width: 12),
           Text(
-            'DÉTAILS DE PAIEMENT',
+            'DETAILS DE PAIEMENT',
             style: GoogleFonts.montserrat(
               color: Colors.white,
               fontSize: 18,
@@ -116,7 +238,6 @@ class _PaiementPageState extends State<PaiementPage> {
     );
   }
 
-  // ─── Récapitulatif ─────────────────────────────────────────────────────────
   Widget _buildSummary() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
@@ -124,7 +245,7 @@ class _PaiementPageState extends State<PaiementPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Récapitulatif',
+            'Recapitulatif',
             style: GoogleFonts.montserrat(
               fontSize: 16,
               fontWeight: FontWeight.w800,
@@ -132,7 +253,7 @@ class _PaiementPageState extends State<PaiementPage> {
             ),
           ),
           const SizedBox(height: 12),
-          ...widget.items.map((item) => _summaryRow(item)),
+          ..._items.map(_summaryRow),
         ],
       ),
     );
@@ -145,7 +266,7 @@ class _PaiementPageState extends State<PaiementPage> {
       decoration: BoxDecoration(
         color: AppColors.lightGray,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: item.color.withValues(alpha:0.2), width: 1),
+        border: Border.all(color: item.color.withValues(alpha: 0.2), width: 1),
       ),
       child: Row(
         children: [
@@ -153,7 +274,7 @@ class _PaiementPageState extends State<PaiementPage> {
             width: 40,
             height: 40,
             decoration: BoxDecoration(
-              color: item.color.withValues(alpha:0.12),
+              color: item.color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(item.icon, color: item.color, size: 20),
@@ -194,7 +315,6 @@ class _PaiementPageState extends State<PaiementPage> {
     );
   }
 
-  // ─── Mode de paiement ──────────────────────────────────────────────────────
   Widget _buildPaymentSection() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
@@ -216,16 +336,16 @@ class _PaiementPageState extends State<PaiementPage> {
               borderRadius: BorderRadius.circular(20),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha:0.06),
+                  color: Colors.black.withValues(alpha: 0.06),
                   blurRadius: 14,
                   offset: const Offset(0, 4),
                 ),
               ],
             ),
             child: Column(
-              children: List.generate(
+              children: List<Widget>.generate(
                 _methods.length,
-                (i) => _paymentOption(i),
+                _paymentOption,
               ),
             ),
           ),
@@ -244,8 +364,9 @@ class _PaiementPageState extends State<PaiementPage> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         decoration: BoxDecoration(
-          color:
-              isSelected ? method.color.withValues(alpha:0.06) : Colors.transparent,
+          color: isSelected
+              ? method.color.withValues(alpha: 0.06)
+              : Colors.transparent,
           borderRadius: BorderRadius.vertical(
             top: index == 0 ? const Radius.circular(20) : Radius.zero,
             bottom: isLast ? const Radius.circular(20) : Radius.zero,
@@ -253,7 +374,8 @@ class _PaiementPageState extends State<PaiementPage> {
           border: isLast
               ? null
               : const Border(
-                  bottom: BorderSide(color: Color(0xFFF0F0F0), width: 1)),
+                  bottom: BorderSide(color: Color(0xFFF0F0F0), width: 1),
+                ),
         ),
         child: Row(
           children: [
@@ -261,7 +383,7 @@ class _PaiementPageState extends State<PaiementPage> {
               width: 44,
               height: 32,
               decoration: BoxDecoration(
-                color: method.color.withValues(alpha:0.12),
+                color: method.color.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
                 border: isSelected
                     ? Border.all(color: method.color, width: 1.5)
@@ -311,7 +433,6 @@ class _PaiementPageState extends State<PaiementPage> {
     );
   }
 
-  // ─── Informations passager ─────────────────────────────────────────────────
   Widget _buildPassengerSection() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
@@ -331,13 +452,13 @@ class _PaiementPageState extends State<PaiementPage> {
             controller: _nameCtrl,
             icon: Icons.person_outline,
             label: 'Nom complet',
-            hint: 'Ex: Koné Jean-Baptiste',
+            hint: 'Ex: Kone Jean-Baptiste',
           ),
           const SizedBox(height: 10),
           _formField(
             controller: _phoneCtrl,
             icon: Icons.phone_outlined,
-            label: 'Numéro de téléphone',
+            label: 'Numero de telephone',
             hint: '+225 07 00 00 00 00',
             keyboard: TextInputType.phone,
           ),
@@ -381,7 +502,8 @@ class _PaiementPageState extends State<PaiementPage> {
               GoogleFonts.montserrat(color: AppColors.lightText, fontSize: 13),
           prefixIcon: ShaderMask(
             blendMode: BlendMode.srcIn,
-            shaderCallback: (b) => AppColors.blueViolet.createShader(b),
+            shaderCallback: (bounds) =>
+                AppColors.blueViolet.createShader(bounds),
             child: Icon(icon, color: Colors.white, size: 20),
           ),
           border: InputBorder.none,
@@ -392,7 +514,6 @@ class _PaiementPageState extends State<PaiementPage> {
     );
   }
 
-  // ─── Total final ───────────────────────────────────────────────────────────
   Widget _buildTotalBlock() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
@@ -403,7 +524,7 @@ class _PaiementPageState extends State<PaiementPage> {
           borderRadius: BorderRadius.circular(22),
           boxShadow: [
             BoxShadow(
-              color: AppColors.gradientBlue.withValues(alpha:0.3),
+              color: AppColors.gradientBlue.withValues(alpha: 0.3),
               blurRadius: 16,
               offset: const Offset(0, 6),
             ),
@@ -416,7 +537,7 @@ class _PaiementPageState extends State<PaiementPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'TOTAL À PAYER',
+                  'TOTAL A PAYER',
                   style: GoogleFonts.montserrat(
                     color: Colors.white70,
                     fontSize: 11,
@@ -426,7 +547,7 @@ class _PaiementPageState extends State<PaiementPage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${widget.items.length} prestation${widget.items.length > 1 ? 's' : ''}',
+                  '${_items.length} prestation${_items.length > 1 ? 's' : ''}',
                   style: GoogleFonts.montserrat(
                     color: Colors.white54,
                     fontSize: 11,
@@ -448,24 +569,9 @@ class _PaiementPageState extends State<PaiementPage> {
     );
   }
 
-  // ─── Bouton confirmer ──────────────────────────────────────────────────────
   Widget _buildConfirmButton(BuildContext context) {
     return GestureDetector(
-      onTap: _isProcessing
-          ? null
-          : () async {
-              setState(() => _isProcessing = true);
-              // Appel API attendu : POST /api/v1/payments
-              // Délai différencié selon le mode de paiement
-              final ms = _selectedPayment == 2 ? 500 : 700;
-              await Future.delayed(Duration(milliseconds: ms));
-              if (!mounted) return;
-              CartModel.clear();
-              setState(() {
-                _isProcessing = false;
-                _confirmed = true;
-              });
-            },
+      onTap: _isProcessing ? null : _handleConfirmedPayment,
       child: Container(
         height: 56,
         decoration: BoxDecoration(
@@ -474,8 +580,8 @@ class _PaiementPageState extends State<PaiementPage> {
           boxShadow: [
             BoxShadow(
               color: _isProcessing
-                  ? AppColors.grayText.withValues(alpha:0.3)
-                  : AppColors.orange.withValues(alpha:0.45),
+                  ? AppColors.grayText.withValues(alpha: 0.3)
+                  : AppColors.orange.withValues(alpha: 0.45),
               blurRadius: 18,
               offset: const Offset(0, 7),
             ),
@@ -534,7 +640,7 @@ class _PaiementPageState extends State<PaiementPage> {
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: AppColors.green.withValues(alpha:0.4),
+            color: AppColors.green.withValues(alpha: 0.4),
             blurRadius: 18,
             offset: const Offset(0, 7),
           ),
@@ -551,7 +657,7 @@ class _PaiementPageState extends State<PaiementPage> {
               const Icon(Icons.check_circle, color: Colors.white, size: 22),
               const SizedBox(width: 10),
               Text(
-                'Paiement Confirmé !',
+                'Paiement Confirme !',
                 style: GoogleFonts.montserrat(
                   fontSize: 15,
                   fontWeight: FontWeight.w800,
@@ -571,5 +677,6 @@ class _PaymentMethod {
   final IconData icon;
   final String label;
   final Color color;
+
   const _PaymentMethod(this.code, this.icon, this.label, this.color);
 }

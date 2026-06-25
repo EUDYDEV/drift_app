@@ -59,9 +59,10 @@ class _ReservationDateScreenState extends State<ReservationDateScreen> {
       MaterialPageRoute(
         builder: (context) => HotelSelectionScreen(
           hotel: hotel,
-          city: widget.city,
-          // Note: On ne passe plus departureDate et returnDate ici, 
-          // car elles sont gérées en interne par HotelSelectionScreen
+          city: widget.city, // Passage de la ville requis par l'écran
+          onBack: () {
+            Navigator.pop(context);
+          },
         ),
       ),
     );
@@ -100,104 +101,102 @@ class _ReservationDateScreenState extends State<ReservationDateScreen> {
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(
-                color: Color(0xFF00B894),
-              ),
-            )
+        child: CircularProgressIndicator(
+          color: Color(0xFF00B894),
+        ),
+      )
           : SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // RÉSUMÉ DE LA RÉSERVATION
+            Container(
               padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.amber[50],
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber[200]!),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // RÉSUMÉ DE LA RÉSERVATION
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.amber[50],
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.amber[200]!),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  widget.city,
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.amber[900],
-                                  ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  '${widget.departureDate.day}/${widget.departureDate.month} - ${widget.returnDate?.day ?? widget.departureDate.day}/${widget.returnDate?.month ?? widget.departureDate.month}',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    color: Colors.amber[700],
-                                  ),
-                                ),
-                              ],
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.city,
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.amber[900],
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: Colors.amber[300]!),
-                              ),
-                              child: Text(
-                                '$nights nuit${nights > 1 ? 's' : ''}',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.amber[900],
-                                ),
-                              ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${widget.departureDate.day}/${widget.departureDate.month} - ${widget.returnDate?.day ?? widget.departureDate.day}/${widget.returnDate?.month ?? widget.departureDate.month}',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.amber[700],
                             ),
-                          ],
+                          ),
+                        ],
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // LISTE HÔTELS
-                  Text(
-                    'Hôtels disponibles (${_hotels.length})',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  if (_hotels.isEmpty)
-                    Center(
-                      child: Text(
-                        'Aucun hôtel disponible',
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: Colors.grey[600],
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.amber[300]!),
+                        ),
+                        child: Text(
+                          '$nights nuit${nights > 1 ? 's' : ''}',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber[900],
+                          ),
                         ),
                       ),
-                    )
-                  else
-                    ..._hotels
-                        .map((hotel) => _buildHotelCard(hotel, nights))
-                        ,
+                    ],
+                  ),
                 ],
               ),
             ),
+            const SizedBox(height: 24),
+
+            // LISTE HÔTELS
+            Text(
+              'Hôtels disponibles (${_hotels.length})',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 12),
+
+            if (_hotels.isEmpty)
+              Center(
+                child: Text(
+                  'Aucun hôtel disponible',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              )
+            else
+              ..._hotels.map((hotel) => _buildHotelCard(hotel, nights)),
+          ],
+        ),
+      ),
     );
   }
 
@@ -307,23 +306,23 @@ class _ReservationDateScreenState extends State<ReservationDateScreen> {
                         .take(3)
                         .map(
                           (amenity) => Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[100],
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              amenity,
-                              style: GoogleFonts.poppins(
-                                fontSize: 10,
-                                color: Colors.grey[700],
-                              ),
-                            ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          amenity,
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            color: Colors.grey[700],
                           ),
-                        )
+                        ),
+                      ),
+                    )
                         .toList(),
                   ),
 

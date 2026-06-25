@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
+import '../../theme/app_colors.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -29,7 +30,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Future<void> _register() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -37,7 +40,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     });
 
     try {
-      final authService = context.read<AuthService>();
+      final authService = Provider.of<AuthService>(context, listen: false);
       final success = await authService.register(
         fullName: _nameController.text,
         email: _emailController.text,
@@ -76,7 +79,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        iconTheme: const IconThemeData(color: Colors.black),
+        iconTheme: const IconThemeData(color: AppColors.darkText),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -85,12 +88,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  gradient: AppColors.blueViolet,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Center(
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
               Text(
                 'Créer un compte',
                 style: GoogleFonts.poppins(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
-                  color: const Color(0xFF1a1a1a),
+                  color: AppColors.darkText,
                 ),
               ),
               const SizedBox(height: 8),
@@ -98,7 +119,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 'Rejoignez DriFt pour des voyages d\'exception',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
-                  color: Colors.grey.shade600,
+                  color: AppColors.grayText,
                 ),
               ),
               const SizedBox(height: 32),
@@ -162,7 +183,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _register,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E90FF),
+                    backgroundColor: AppColors.gradientBlue,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),
                   ),

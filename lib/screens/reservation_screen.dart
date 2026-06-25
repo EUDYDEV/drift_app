@@ -4,16 +4,29 @@ import '../theme/app_colors.dart';
 import 'reservation_date_screen.dart';
 
 class ReservationScreen extends StatefulWidget {
-  const ReservationScreen({super.key});
+  final String? initialCity;
+  final DateTime? initialDepartureDate;
+  const ReservationScreen({
+    super.key,
+    this.initialCity,
+    this.initialDepartureDate,
+  });
 
   @override
   State<ReservationScreen> createState() => _ReservationScreenState();
 }
 
 class _ReservationScreenState extends State<ReservationScreen> {
-  final TextEditingController _cityController = TextEditingController();
+  late final TextEditingController _cityController;
   DateTime? _departureDate;
   DateTime? _returnDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _cityController = TextEditingController(text: widget.initialCity);
+    _departureDate = widget.initialDepartureDate;
+  }
 
   void _selectDate(bool isDeparture) async {
     final selected = await showDatePicker(

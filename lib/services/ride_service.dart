@@ -1,85 +1,131 @@
-import 'package:flutter/material.dart';
-import '../models/ride_option_model.dart';
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
+
 import '../models/location_model.dart';
+import '../models/ride_model.dart';
+import '../models/ride_option_model.dart';
+import 'api_service.dart';
 
-class RideService extends ChangeNotifier {
-  List<RideOption> _availableOptions = [];
-  bool _isLoading = false;
-  String? _error;
-
-  List<RideOption> get availableOptions => _availableOptions;
-  bool get isLoading => _isLoading;
-  String? get error => _error;
-
-  /// Récupère les options de trajet disponibles
-  Future<List<RideOption>> getRideOptions({
-    required Location from,
-    required Location to,
-  }) async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-
+class RideService {
+  Future<List<dynamic>> getNearbyDrivers() async {
     try {
-      // Simulation: calcule la distance et propose des prix
-      final distance = from.distanceTo(to);
-      final estimatedMinutes = (distance * 3).toInt(); // ~20 km/h
+      final response = await ApiService.authenticatedGet('/rides/nearby-drivers');
 
-      _availableOptions = [
-        RideOption(
-          type: RideType.withDriver,
-          label: "Avec chauffeur",
-          price: (distance * 2.5).toDouble(),
-          estimatedPrice: (distance * 2.5).toDouble(),
-          estimatedTime: "$estimatedMinutes-${estimatedMinutes + 5} min",
-          vehicleType: "comfort",
-          description: "Chauffeur professionnel pour plus de confort",
-        ),
-        RideOption(
-          type: RideType.withoutDriver,
-          label: "Sans chauffeur",
-          price: (distance * 1.8).toDouble(),
-          estimatedPrice: (distance * 1.8).toDouble(),
-          estimatedTime: "$estimatedMinutes-${estimatedMinutes + 5} min",
-          vehicleType: "economy",
-          description: "Conduisez vous-même - option économique",
-        ),
-      ];
-
-      _error = null;
-      notifyListeners();
-      return _availableOptions;
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as List<dynamic>;
+      }
+      return [];
     } catch (e) {
-      _error = "Erreur lors de la récupération des options: $e";
-      notifyListeners();
+      debugPrint('Erreur lors de la recuperation des chauffeurs: $e');
       return [];
     }
   }
 
-  /// Estime la durée d'un trajet
-  Future<String> estimateTravelTime(Location from, Location to) async {
+  Future<List<dynamic>> getMyRides() async {
     try {
-      final distance = from.distanceTo(to);
-      final minutes = (distance * 3).toInt();
-      return "$minutes min";
+      final response = await ApiService.authenticatedGet('/rides');
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        return [];
+      }
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! List) return [];
+
+        return decoded
+            .whereType<Map<String, dynamic>>()
+            .map(Ride.fromJson)
+            .map((ride) => {
+                  'id': ride.id,
+                  'title': 'Trajet vers ${ride.destination}',
+                  'description':
+                      '${_statusLabel(ride.status)} - ${ride.finalAmount.toStringAsFixed(0)} FCFA',
+                })
+            .toList();
+      }
+      return [];
     } catch (e) {
-      return "N/A";
+      debugPrint('Erreur lors de la recuperation des trajets: $e');
+      return [];
     }
   }
 
-  /// Calcule le prix d'un trajet
-  Future<double> calculatePrice({
-    required Location from,
-    required Location to,
-    required RideType rideType,
-  }) async {
+  Future<bool> requestRide(String destination, double price) async {
+    final _ = price;
     try {
-      final distance = from.distanceTo(to);
-      const baseFare = 1000.0; // 1000 FCFA
-      final perKmRate = rideType == RideType.withDriver ? 2.5 : 1.8;
-      return baseFare + (distance * perKmRate);
+      final response = await ApiService.authenticatedPost(
+        '/rides/request',
+        {
+          'origin': 'Position actuelle',
+          'destination': destination,
+        },
+      );
+      return response.statusCode == 201;
     } catch (e) {
-      return 0;
+      debugPrint('Erreur lors de la creation de la course: $e');
+      return false;
     }
   }
+
+  Future<List<RideOption>> getRideOptions({
+    required AppLocation from,
+    required AppLocation to,
+  }) async {
+    final distanceKm = from.distanceTo(to);
+    final basePrice = max(1000.0, distanceKm * 500.0);
+
+    return [
+      RideOption(
+        type: RideType.withDriver,
+        label: 'Avec chauffeur',
+        price: basePrice * 1.5,
+        estimatedPrice: basePrice * 1.5,
+        estimatedTime: _formatDuration(distanceKm * 2),
+        vehicleType: 'comfort',
+        description: 'Chauffeur professionnel, vehicule confortable',
+      ),
+      RideOption(
+        type: RideType.withoutDriver,
+        label: 'Sans chauffeur',
+        price: basePrice,
+        estimatedPrice: basePrice,
+        estimatedTime: _formatDuration(distanceKm * 2),
+        vehicleType: 'economy',
+        description: 'Vehicule autonome, solution economique',
+      ),
+    ];
+  }
+
+  String _formatDuration(double minutes) {
+    final min = minutes.round();
+    if (min < 60) return '$min min';
+    final h = min ~/ 60;
+    final m = min % 60;
+    return m == 0 ? '${h}h' : '${h}h ${m}min';
+  }
+
+  String _statusLabel(RideStatus status) {
+    switch (status) {
+      case RideStatus.accepted:
+        return 'Confirmee';
+      case RideStatus.scheduled:
+        return 'Planifiee';
+      case RideStatus.inProgress:
+        return 'En cours';
+      case RideStatus.overtime:
+        return 'Overtime';
+      case RideStatus.completed:
+        return 'Terminee';
+      case RideStatus.cancelled:
+        return 'Annulee';
+      case RideStatus.restricted:
+        return 'Restreinte';
+      case RideStatus.pending:
+      case RideStatus.requested:
+        return 'En attente';
+    }
+  }
+
+  void dispose() {}
 }

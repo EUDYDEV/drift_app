@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../data/vip_packs_data.dart';
+// VIP packs should come from backend; keep file independent from local demo data.
 import 'vip_pack_detail_page.dart';
+import '../../models/vip_pack.dart';
 
 class AllVipPacksPage extends StatelessWidget {
   const AllVipPacksPage({super.key});
@@ -54,7 +55,23 @@ class AllVipPacksPage extends StatelessWidget {
                   fontSize: 13, color: Colors.white54),
             ),
             const SizedBox(height: 28),
-            ...kVipPacks.map((pack) => _buildPackCard(context, pack)),
+            Builder(builder: (ctx) {
+              // VIP packs are provided by backend in production. If none available,
+              // show a neutral message.
+              if (kVipPacks.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text('Aucun pack disponible pour le moment',
+                        style: GoogleFonts.montserrat(
+                            color: Colors.white54, fontSize: 14)),
+                  ),
+                );
+              }
+              return Column(
+                children: kVipPacks.map((pack) => _buildPackCard(context, pack)).toList(),
+              );
+            }),
           ],
         ),
       ),

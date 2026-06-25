@@ -1,8 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+
+import '../../controllers/experience_filter_controller.dart';
+import '../../models/cart_model.dart';
+import '../../models/hotel_model.dart';
+import '../../models/location_model.dart';
+import '../../models/partner_catalog_prestation.dart';
 import '../../services/hotel_service.dart';
 import '../../services/location_service.dart';
-import '../../models/hotel_model.dart';
+import '../../services/partner_catalog_service.dart';
 import '../../theme/app_colors.dart';
 import '../hotel_selection_screen.dart';
 
@@ -16,162 +23,213 @@ class DiscoveryPage extends StatefulWidget {
 class _DiscoveryPageState extends State<DiscoveryPage> {
   final HotelService _hotelService = HotelService();
   final TextEditingController _searchController = TextEditingController();
-  List<Hotel> _featuredHotels = [];
-  List<Hotel> _searchResults = [];
+
+  late final ExperienceFilterController _experienceFilterController;
+  late final PartnerCatalogService _partnerCatalogService;
+  late final LocationService _locationService;
+
+  List<Hotel> _featuredHotels = <Hotel>[];
+  List<Hotel> _searchResults = <Hotel>[];
+  List<PartnerCatalogPrestation> _deliveryResults =
+      <PartnerCatalogPrestation>[];
   bool _isSearching = false;
-  String? _searchCity;
   bool _isLoading = true;
+  Hotel? _selectedExperience;
+  String _activeCity = 'Abidjan';
+  String _selectedFilter = 'Tout';
+  AppLocation? _currentLocation;
+
+  bool get _showsDeliveryResults =>
+      _selectedFilter != 'Tout' && _selectedFilter != 'Hotels';
 
   @override
   void initState() {
     super.initState();
+    _experienceFilterController = context.read<ExperienceFilterController>();
+    _partnerCatalogService = context.read<PartnerCatalogService>();
+    _locationService = context.read<LocationService>();
+    _experienceFilterController.addListener(_handleExternalFilterChanged);
     _loadFeatured();
   }
 
   Future<void> _loadFeatured() async {
     final hotels = await _hotelService.getFeaturedEstablishments();
-    if (mounted) {
-      setState(() {
-        _featuredHotels = hotels;
-        _isLoading = false;
-      });
-    }
+    if (!mounted) return;
+
+    setState(() {
+      _activeCity = 'Abidjan';
+      _featuredHotels = hotels;
+      _searchResults = hotels;
+      _isLoading = false;
+      _selectedFilter = 'Tout';
+    });
   }
 
-  Future<void> _showLocationDialog() async {
-    if (!mounted) return;
-    final dialogContext = context;
-    final cityCtrl = TextEditingController();
-    final locationService = LocationService();
+  Future<void> _loadHotelsForCity(String city) async {
+    setState(() {
+      _isLoading = true;
+      _selectedExperience = null;
+      _activeCity = city;
+      _selectedFilter = 'Hotels';
+    });
 
-    await showDialog(
-      context: dialogContext,
-      barrierDismissible: false,
-      builder: (BuildContext alertContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          "Où recherchez-vous ?",
-          style:
-              GoogleFonts.montserrat(fontWeight: FontWeight.bold, fontSize: 18),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: cityCtrl,
-              decoration: const InputDecoration(
-                hintText: "Entrez une ville (ex: Abidjan)",
-                prefixIcon:
-                    Icon(Icons.location_city, color: AppColors.gradientBlue),
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text("OU",
-                style: GoogleFonts.montserrat(
-                    fontSize: 10,
-                    color: Colors.grey,
-                    fontWeight: FontWeight.bold)),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  final navigator = Navigator.of(alertContext);
-                  final loc = await locationService.getCurrentLocation();
-                  if (loc != null) {
-                    if (!mounted) return;
-                    setState(() => _searchCity = loc.city ?? "Abidjan");
-                    navigator.pop();
-                  }
-                },
-                icon: const Icon(Icons.my_location, color: Colors.white),
-                label: const Text("Ma position actuelle"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.gradientBlue,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30)),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              if (cityCtrl.text.isNotEmpty) {
-                setState(() => _searchCity = cityCtrl.text);
-                Navigator.pop(alertContext);
-              }
-            },
-            child: const Text("Valider",
-                style: TextStyle(
-                    color: AppColors.gradientBlue,
-                    fontWeight: FontWeight.bold)),
-          ),
-        ],
-      ),
+    final hotels = await _hotelService.getHotelsInCity(city);
+    if (!mounted) return;
+
+    setState(() {
+      _featuredHotels = hotels;
+      _searchResults = hotels;
+      _isSearching = true;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _loadDeliveryOptions(String cuisineCategory) async {
+    setState(() {
+      _isLoading = true;
+      _selectedExperience = null;
+      _selectedFilter = cuisineCategory;
+    });
+
+    _currentLocation ??= await _locationService.getCurrentLocation();
+    final prestations = await _partnerCatalogService.fetchDeliveryCatalog(
+      cuisineCategory: cuisineCategory,
+      nearLocation: _currentLocation,
     );
+
+    if (!mounted) return;
+    setState(() {
+      _deliveryResults = prestations;
+      _isSearching = true;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _onExternalFilterChanged() async {
+    final state = _experienceFilterController.consumePendingState();
+    if (state == null || state.serviceType != 'hotel') {
+      return;
+    }
+
+    final city = state.city.trim();
+    if (city.isEmpty) {
+      return;
+    }
+
+    _searchController.text = city;
+    await _loadHotelsForCity(city);
+  }
+
+  void _handleExternalFilterChanged() {
+    _onExternalFilterChanged();
   }
 
   Future<void> _onSearch(String query) async {
-    if (query.isEmpty) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) {
       setState(() {
         _isSearching = false;
-        _searchResults = [];
+        _searchResults = _featuredHotels;
       });
       return;
     }
 
-    if (_searchCity == null) {
-      await _showLocationDialog();
-      if (_searchCity == null) return;
+    setState(() => _isLoading = true);
+
+    final normalized = trimmed.toLowerCase();
+    final cuisineCategory = switch (normalized) {
+      final value when value.contains('africain') => 'Africain',
+      final value when value.contains('chinois') => 'Chinois',
+      final value when value.contains('europeen') ||
+          value.contains('européen') =>
+        'Europeen',
+      _ => null,
+    };
+
+    if (cuisineCategory != null) {
+      await _loadDeliveryOptions(cuisineCategory);
+      return;
     }
 
-    setState(() => _isLoading = true);
-    final results =
-        await _hotelService.searchEstablishments(query, city: _searchCity);
-    if (mounted) {
+    if (_showsDeliveryResults) {
+      _currentLocation ??= await _locationService.getCurrentLocation();
+      final baseResults = await _partnerCatalogService.fetchDeliveryCatalog(
+        cuisineCategory: _selectedFilter,
+        nearLocation: _currentLocation,
+      );
+
+      if (!mounted) return;
       setState(() {
-        _searchResults = results;
+        _deliveryResults = baseResults
+            .where(
+              (item) =>
+                  item.name.toLowerCase().contains(trimmed.toLowerCase()) ||
+                  item.partnerName.toLowerCase().contains(trimmed.toLowerCase()),
+            )
+            .toList(growable: false);
         _isSearching = true;
         _isLoading = false;
       });
+      return;
     }
+
+    final results =
+        await _hotelService.searchEstablishments(trimmed, city: _activeCity);
+    if (!mounted) return;
+
+    setState(() {
+      _searchResults = results;
+      _isSearching = true;
+      _isLoading = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    _experienceFilterController.removeListener(_handleExternalFilterChanged);
+    _searchController.dispose();
+    _hotelService.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_selectedExperience != null) {
+      return HotelSelectionScreen(
+        hotel: _selectedExperience!,
+        city: _selectedExperience!.city,
+        onBack: () => setState(() => _selectedExperience = null),
+      );
+    }
+
     return Scaffold(
-      backgroundColor: AppColors.white,
+      backgroundColor: const Color(0xFFF9FAFB),
       body: Column(
         children: [
           _buildSearchHeader(),
           Expanded(
             child: _isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.gradientBlue))
+                    child: CircularProgressIndicator(color: AppColors.orange),
+                  )
                 : SingleChildScrollView(
                     padding: const EdgeInsets.all(20),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (!_isSearching) ...[
-                          _buildSectionTitle("Nos Pépites (Sponsorisé)"),
-                          const SizedBox(height: 12),
-                          ..._featuredHotels
-                              .map((h) => _buildEstablishmentCard(h)),
-                        ] else ...[
-                          _buildSectionTitle("Résultats de recherche"),
-                          const SizedBox(height: 12),
-                          if (_searchResults.isEmpty)
-                            const Center(
-                                child: Text("Aucun établissement trouvé"))
-                          else
-                            ..._searchResults
-                                .map((h) => _buildEstablishmentCard(h)),
-                        ],
+                        _buildSectionTitle(
+                          _showsDeliveryResults
+                              ? 'Drift Gastronomie'
+                              : _isSearching
+                                  ? 'Resultats'
+                                  : 'Experiences Premium',
+                        ),
+                        const SizedBox(height: 14),
+                        if (_showsDeliveryResults)
+                          ..._deliveryResults.map(_buildDeliveryCard)
+                        else
+                          ...(_isSearching ? _searchResults : _featuredHotels)
+                              .map(_buildExperienceCard),
                         const SizedBox(height: 100),
                       ],
                     ),
@@ -184,27 +242,18 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
 
   Widget _buildSearchHeader() {
     return Container(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 15),
+      decoration: const BoxDecoration(color: Colors.white),
       child: TextField(
         controller: _searchController,
         onChanged: _onSearch,
         decoration: InputDecoration(
-          hintText: 'Rechercher un hôtel, restau, ville...',
-          prefixIcon: const Icon(Icons.search, color: AppColors.gradientBlue),
+          hintText: 'Hotel, restaurant, activite...',
+          prefixIcon: const Icon(Icons.search, color: AppColors.orange),
           filled: true,
-          fillColor: AppColors.lightGray,
+          fillColor: const Color(0xFFF3F4F6),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(30),
+            borderRadius: BorderRadius.circular(15),
             borderSide: BorderSide.none,
           ),
           contentPadding: const EdgeInsets.symmetric(vertical: 0),
@@ -218,28 +267,15 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
       title,
       style: GoogleFonts.montserrat(
         fontSize: 18,
-        fontWeight: FontWeight.w800,
+        fontWeight: FontWeight.w900,
         color: AppColors.darkText,
       ),
     );
   }
 
-  Widget _buildEstablishmentCard(Hotel hotel) {
-    final isHotel = hotel.type == 'hotel';
-
+  Widget _buildExperienceCard(Hotel hotel) {
     return GestureDetector(
-      onTap: () {
-        // Maintenant on ouvre l'écran de sélection pour TOUT (Hotel, Restau, Cinéma)
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => HotelSelectionScreen(
-              hotel: hotel,
-              city: hotel.city,
-            ),
-          ),
-        );
-      },
+      onTap: () => setState(() => _selectedExperience = hotel),
       child: Container(
         margin: const EdgeInsets.only(bottom: 20),
         decoration: BoxDecoration(
@@ -247,23 +283,29 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.08),
+              color: Colors.black.withValues(alpha: 0.04),
               blurRadius: 15,
               offset: const Offset(0, 5),
             ),
           ],
         ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ClipRRect(
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(20)),
-              child: Container(
-                height: 160,
-                width: double.infinity,
+            Container(
+              height: 180,
+              width: double.infinity,
+              decoration: BoxDecoration(
                 color: Colors.grey[200],
-                child: const Icon(Icons.image, size: 50, color: Colors.grey),
+                image: DecorationImage(
+                  image: NetworkImage(
+                    hotel.coverImage.isNotEmpty
+                        ? hotel.coverImage
+                        : 'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=800',
+                  ),
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
             Padding(
@@ -283,63 +325,22 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
                           ),
                         ),
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: AppColors.orange.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          hotel.type.toUpperCase(),
-                          style: GoogleFonts.montserrat(
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.orange,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      const Icon(Icons.star, color: Colors.amber, size: 16),
-                      const SizedBox(width: 4),
                       Text(
-                        "${hotel.rating} (${hotel.reviewCount} avis)",
-                        style: GoogleFonts.montserrat(
-                            fontSize: 12, color: AppColors.grayText),
+                        '${hotel.rating.toStringAsFixed(1)} *',
+                        style: const TextStyle(
+                          color: Colors.amber,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 5),
                   Text(
-                    hotel.address,
+                    hotel.city,
                     style: GoogleFonts.montserrat(
-                        fontSize: 12, color: AppColors.grayText),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      ElevatedButton(
-                        onPressed:
-                            null, // Le GestureDetector parent gère la navigation
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.gradientBlue,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20)),
-                        ),
-                        child: Text(
-                          isHotel ? "Chambres" : "Réserver",
-                          style: GoogleFonts.montserrat(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ],
+                      fontSize: 12,
+                      color: AppColors.grayText,
+                    ),
                   ),
                 ],
               ),
@@ -348,5 +349,162 @@ class _DiscoveryPageState extends State<DiscoveryPage> {
         ),
       ),
     );
+  }
+
+  Widget _buildDeliveryCard(PartnerCatalogPrestation prestation) {
+    final cover = prestation.mediaUrls.isNotEmpty
+        ? prestation.mediaUrls.first
+        : 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800';
+    final cuisine = prestation.cuisineCategory ?? 'Cuisine premium';
+    final city = prestation.cityHint ?? _activeCity;
+    final distanceLabel = _distanceLabel(prestation.partnerLocation);
+
+    return GestureDetector(
+      onTap: () => _showDeliveryDialog(prestation),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 15,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              height: 180,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                image: DecorationImage(
+                  image: NetworkImage(cover),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          prestation.name,
+                          style: GoogleFonts.montserrat(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        CartModel.formatCurrency(prestation.price.round()),
+                        style: GoogleFonts.montserrat(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '${prestation.partnerName} · $cuisine',
+                    style: GoogleFonts.montserrat(
+                      fontSize: 12,
+                      color: AppColors.grayText,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    distanceLabel ?? city,
+                    style: GoogleFonts.montserrat(
+                      fontSize: 11,
+                      color: AppColors.grayText,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showDeliveryDialog(PartnerCatalogPrestation prestation) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(prestation.name),
+        content: Text(
+          '${prestation.partnerName}\n'
+          '${CartModel.formatCurrency(prestation.price.round())}\n\n'
+          'Cuisine: ${prestation.cuisineCategory ?? 'Premium'}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Fermer'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              CartModel.add(
+                CartItem(
+                  id: 'delivery:${prestation.id}',
+                  type: 'restaurant',
+                  serviceType: prestation.typeService,
+                  name: prestation.name,
+                  subtitle: prestation.partnerName,
+                  priceDisplay: CartModel.formatCurrency(
+                    prestation.price.round(),
+                  ),
+                  priceValue: prestation.price.round(),
+                  color: AppColors.orange,
+                  icon: Icons.restaurant,
+                  partnerId: prestation.partnerId,
+                  prestationId: prestation.id,
+                  partnerName: prestation.partnerName,
+                  partnerType: prestation.partnerType,
+                  partnerCity: prestation.cityHint,
+                  partnerAddress: prestation.partnerLocation.address,
+                  partnerLatitude: prestation.partnerLocation.latitude,
+                  partnerLongitude: prestation.partnerLocation.longitude,
+                  metadata: <String, dynamic>{
+                    'cuisineCategory': prestation.cuisineCategory,
+                    'mediaUrls': prestation.mediaUrls,
+                  },
+                ),
+              );
+              Navigator.of(dialogContext).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Prestation ajoutee au pack'),
+                ),
+              );
+            },
+            child: const Text('Ajouter au pack'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _distanceLabel(AppLocation partnerLocation) {
+    if (_currentLocation == null) {
+      return null;
+    }
+
+    final distance = _currentLocation!.distanceTo(partnerLocation);
+    return '${distance.toStringAsFixed(distance < 10 ? 1 : 0)} km de vous';
   }
 }

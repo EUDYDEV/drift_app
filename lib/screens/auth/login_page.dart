@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../theme/app_colors.dart';
 import 'register_page.dart';
 import 'forgot_password_page.dart';
 import '../main_navigation_page.dart';
-import '../../models/user_session.dart';
+import '../../services/auth_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -14,8 +15,17 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
   bool _obscure = true;
   bool _loading = false;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +56,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 32),
                   _field(Icons.email_outlined, 'Email ou téléphone',
-                      TextInputType.emailAddress),
+                      TextInputType.emailAddress, _emailController),
                   const SizedBox(height: 14),
                   _passwordField(),
                   const SizedBox(height: 10),
@@ -187,13 +197,14 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-  Widget _field(IconData icon, String hint, TextInputType type) {
+  Widget _field(IconData icon, String hint, TextInputType type, TextEditingController controller) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.lightGray,
         borderRadius: BorderRadius.circular(18),
       ),
       child: TextField(
+        controller: controller,
         keyboardType: type,
         decoration: InputDecoration(
           hintText: hint,
@@ -219,6 +230,7 @@ class _LoginPageState extends State<LoginPage> {
         borderRadius: BorderRadius.circular(18),
       ),
       child: TextField(
+        controller: _passwordController,
         obscureText: _obscure,
         decoration: InputDecoration(
           hintText: 'Mot de passe',
@@ -251,15 +263,28 @@ class _LoginPageState extends State<LoginPage> {
   Widget _loginButton(BuildContext context) {
     return GestureDetector(
       onTap: () async {
-        final nav = Navigator.of(context);
+        final authService = Provider.of<AuthService>(context, listen: false);
         setState(() => _loading = true);
-        await Future.delayed(const Duration(milliseconds: 900));
-        if (!mounted) return;
-        setState(() => _loading = false);
-        UserSession.login(name: 'EUDY DANIEL', email: 'eudyproject@gmail.com');
-        nav.pushReplacement(
-          MaterialPageRoute(builder: (_) => const MainNavigationPage()),
+        final success = await authService.login(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
         );
+        setState(() => _loading = false);
+        if (success) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(builder: (_) => const MainNavigationPage()),
+            );
+          });
+        } else {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Impossible de se connecter. Vérifiez vos identifiants.'),
+            ));
+          });
+        }
       },
       child: Container(
         height: 56,

@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../../data/vip_packs_data.dart';
+// VIP pack details are shown from selected pack. In production these
+// should be populated from backend data; keep import in case pack is
+// passed from previous screen.
+
 import '../../models/cart_model.dart';
+import '../../models/vip_pack.dart';
 import '../../theme/app_colors.dart';
 
 class VipPackDetailPage extends StatelessWidget {
@@ -48,8 +52,8 @@ class VipPackDetailPage extends StatelessWidget {
       ),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            pack.gradientStart.withValues(alpha:0.25),
+            colors: [
+            pack.gradientStart.withAlpha((0.25*255).round()),
             const Color(0xFF141414),
           ],
           begin: Alignment.topCenter,
@@ -98,9 +102,9 @@ class VipPackDetailPage extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha:0.06),
+              color: Colors.white.withAlpha((0.06*255).round()),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.white.withValues(alpha:0.12)),
+              border: Border.all(color: Colors.white.withAlpha((0.12*255).round())),
             ),
             child: Text(
               pack.price,
@@ -245,7 +249,7 @@ class VipPackDetailPage extends StatelessWidget {
             borderRadius: BorderRadius.circular(30),
             boxShadow: [
               BoxShadow(
-                color: pack.gradientStart.withValues(alpha:0.4),
+                color: pack.gradientStart.withAlpha((0.4*255).round()),
                 blurRadius: 20,
                 offset: const Offset(0, 8),
               ),

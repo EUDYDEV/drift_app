@@ -1,71 +1,37 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../theme/app_colors.dart';
 import '../../models/cart_model.dart';
+import '../../models/driver_model.dart';
+import '../../models/location_model.dart';
+import '../../services/driver_availability_service.dart';
 import '../paiement_page.dart';
 import 'chauffeur_detail_page.dart';
 import 'chat_page.dart';
 
-// ─── Données chauffeur simulé ─────────────────────────────────────────────
-class _FakeDriver {
-  final String name;
-  final String sub;
-  final double rating;
-  final int trips;
-  final String plate;
-  final int etaMin;
-  final Color color;
-  const _FakeDriver({
-    required this.name,
-    required this.sub,
-    required this.rating,
-    required this.trips,
-    required this.plate,
-    required this.etaMin,
-    required this.color,
-  });
-}
-
-const _kDrivers = [
-  _FakeDriver(
-    name: 'Ibrahim Koné',
-    sub: 'Chauffeur certifié · 5 ans',
-    rating: 4.9,
-    trips: 1247,
-    plate: 'AB 1234 CI',
-    etaMin: 8,
-    color: Color(0xFF6C63FF),
-  ),
-  _FakeDriver(
-    name: 'Kouassi Aimé',
-    sub: 'Chauffeur VIP · 7 ans',
-    rating: 4.8,
-    trips: 2043,
-    plate: 'CI 5678 AB',
-    etaMin: 5,
-    color: Color(0xFF1E90FF),
-  ),
-  _FakeDriver(
-    name: 'Diarrassouba Mamadou',
-    sub: 'Chauffeur Pro · 3 ans',
-    rating: 4.7,
-    trips: 689,
-    plate: 'PL 9012 CI',
-    etaMin: 12,
-    color: Color(0xFF43A047),
-  ),
-];
+// Chauffeurs sont fournis par le backend via DriverAvailabilityService
 
 const _kCities = [
-  'Abidjan', 'Assinie', 'Grand-Bassam',
-  'Yamoussoukro', 'Bouaké', 'San-Pédro',
+  'Abidjan',
+  'Assinie',
+  'Grand-Bassam',
+  'Yamoussoukro',
+  'Bouaké',
+  'San-Pédro',
 ];
 
 const _kDates = ['Aujourd\'hui', 'Demain', 'Après-demain'];
 const _kTimes = [
-  '08:00', '09:00', '10:00', '11:00', '12:00',
-  '14:00', '15:00', '16:00', '18:00', '20:00',
+  '08:00',
+  '09:00',
+  '10:00',
+  '11:00',
+  '12:00',
+  '14:00',
+  '15:00',
+  '16:00',
+  '18:00',
+  '20:00',
 ];
 
 // ─── Page booking ─────────────────────────────────────────────────────────
@@ -94,7 +60,7 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
   int _timeIdx = 2;
 
   // Driver trouvé
-  late _FakeDriver _driver;
+  Driver? _driver;
 
   // Animation radar (étape 1)
   late AnimationController _radarCtrl;
@@ -103,7 +69,6 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
   @override
   void initState() {
     super.initState();
-    _driver = _kDrivers[Random().nextInt(_kDrivers.length)];
     _radarCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -121,9 +86,25 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
 
   void _startSearch() async {
     setState(() => _step = 1);
-    await Future.delayed(const Duration(seconds: 3));
+    final service = DriverAvailabilityService();
+    // Use selected city as address hint; backend will compute nearby drivers by device GPS in production
+    final loc = AppLocation(
+        latitude: 0,
+        longitude: 0,
+        address: _kCities[_cityIdx],
+        city: _kCities[_cityIdx]);
+    final list = await service.findNearbyDrivers(location: loc, radiusKm: 30);
     if (!mounted) return;
-    setState(() => _step = 2);
+    if (list.isNotEmpty) {
+      setState(() {
+        _driver = list.first;
+        _step = 2;
+      });
+    } else {
+      setState(() => _step = 0);
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Aucun chauffeur trouvé')));
+    }
   }
 
   String get _priceLabel =>
@@ -136,9 +117,8 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _step == 1
-          ? const Color(0xFF0A0A0F)
-          : AppColors.lightGray,
+      backgroundColor:
+          _step == 1 ? const Color(0xFF0A0A0F) : AppColors.lightGray,
       body: AnimatedSwitcher(
         duration: const Duration(milliseconds: 400),
         child: _step == 0
@@ -277,8 +257,7 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
           onTap: () => setState(() => _cityIdx = i),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             decoration: BoxDecoration(
               color: sel ? widget.option.accentColor : AppColors.white,
               borderRadius: BorderRadius.circular(14),
@@ -398,8 +377,8 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
       decoration: BoxDecoration(
         color: AppColors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-            color: widget.option.accentColor.withValues(alpha: 0.3)),
+        border:
+            Border.all(color: widget.option.accentColor.withValues(alpha: 0.3)),
       ),
       child: Row(
         children: [
@@ -504,8 +483,8 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
               animation: _radarAnim,
               builder: (_, __) => CustomPaint(
                 size: const Size(280, 280),
-                painter: _RadarPainter(
-                    _radarAnim.value, widget.option.accentColor),
+                painter:
+                    _RadarPainter(_radarAnim.value, widget.option.accentColor),
               ),
             ),
           ),
@@ -519,8 +498,8 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: widget.option.accentColor.withValues(alpha: 0.2),
-                    border: Border.all(
-                        color: widget.option.accentColor, width: 2),
+                    border:
+                        Border.all(color: widget.option.accentColor, width: 2),
                   ),
                   child: Icon(widget.option.icon,
                       color: widget.option.accentColor, size: 34),
@@ -636,16 +615,14 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
             ),
           ),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
               color: AppColors.green.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                  color: AppColors.green.withValues(alpha: 0.4)),
+              border: Border.all(color: AppColors.green.withValues(alpha: 0.4)),
             ),
             child: Text(
-              '${_driver.etaMin} min',
+              '${_driver?.eta ?? 0} min',
               style: GoogleFonts.montserrat(
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
@@ -658,7 +635,7 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
     );
   }
 
-  Widget _driverCard(_FakeDriver d) {
+  Widget _driverCard(Driver? d) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -682,7 +659,11 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
                 height: 64,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                      colors: [d.color, d.color.withValues(alpha: 0.6)]),
+                    colors: [
+                      AppColors.gradientBlue.withOpacity(0.8),
+                      AppColors.gradientBlue.withOpacity(0.4),
+                    ],
+                  ),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.person, color: Colors.white, size: 34),
@@ -693,7 +674,7 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      d.name,
+                      d?.name ?? 'Chauffeur',
                       style: GoogleFonts.montserrat(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
@@ -702,7 +683,7 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      d.sub,
+                      d?.vehicleType ?? '',
                       style: GoogleFonts.montserrat(
                           fontSize: 11, color: AppColors.grayText),
                     ),
@@ -713,7 +694,7 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
                             color: Color(0xFFFFD700), size: 14),
                         const SizedBox(width: 3),
                         Text(
-                          '${d.rating}',
+                          d?.rating.toStringAsFixed(1) ?? '0.0',
                           style: GoogleFonts.montserrat(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
@@ -722,7 +703,7 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          '· ${d.trips} courses',
+                          '· ${d?.reviewCount ?? 0} avis',
                           style: GoogleFonts.montserrat(
                               fontSize: 11, color: AppColors.grayText),
                         ),
@@ -759,14 +740,14 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
                   ],
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: AppColors.darkText.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    d.plate,
+                    d?.licensePlate ?? '-',
                     style: GoogleFonts.montserrat(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
@@ -782,7 +763,7 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
     );
   }
 
-  Widget _actionButtons(_FakeDriver d) {
+  Widget _actionButtons(Driver? d) {
     return Row(
       children: [
         Expanded(
@@ -790,12 +771,15 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
             icon: Icons.phone_outlined,
             label: 'Appeler',
             color: AppColors.green,
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Appel vers ${d.name}...',
-                  style:
-                      GoogleFonts.montserrat(fontWeight: FontWeight.w600)),
-              backgroundColor: AppColors.green,
-            )),
+            onTap: () {
+              if (d != null) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text('Appel vers ${d.name}...',
+                      style: GoogleFonts.montserrat(fontWeight: FontWeight.w600)),
+                  backgroundColor: AppColors.green,
+                ));
+              }
+            },
           ),
         ),
         const SizedBox(width: 12),
@@ -804,8 +788,8 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
             icon: Icons.chat_bubble_outline,
             label: 'Message',
             color: widget.option.accentColor,
-            onTap: () => Navigator.push(context,
-                MaterialPageRoute(builder: (_) => const ChatPage())),
+            onTap: () => Navigator.push(
+                context, MaterialPageRoute(builder: (_) => const ChatPage())),
           ),
         ),
       ],
@@ -862,12 +846,9 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
       ),
       child: Column(
         children: [
-          _summaryRow(Icons.location_on_outlined, 'Ville',
-              _kCities[_cityIdx]),
-          _summaryRow(Icons.calendar_today_outlined, 'Date',
-              _kDates[_dateIdx]),
-          _summaryRow(
-              Icons.access_time_outlined, 'Heure', _kTimes[_timeIdx]),
+          _summaryRow(Icons.location_on_outlined, 'Ville', _kCities[_cityIdx]),
+          _summaryRow(Icons.calendar_today_outlined, 'Date', _kDates[_dateIdx]),
+          _summaryRow(Icons.access_time_outlined, 'Heure', _kTimes[_timeIdx]),
           _summaryRow(Icons.timer_outlined, 'Durée', _durLabel),
           const Divider(height: 20, color: Colors.black12),
           Row(
@@ -917,7 +898,7 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
     );
   }
 
-  Widget _payButton(_FakeDriver d) {
+  Widget _payButton(Driver? d) {
     return Container(
       color: AppColors.white,
       padding: EdgeInsets.only(
@@ -927,25 +908,28 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
         bottom: MediaQuery.of(context).padding.bottom + 16,
       ),
       child: GestureDetector(
-        onTap: () {
-          final item = CartItem(
-            id: 'chauffeur_${widget.option.id}_${DateTime.now().millisecondsSinceEpoch}',
-            type: 'chauffeur',
-            name: 'Chauffeur ${widget.option.name} · ${d.name}',
-            subtitle:
-                '${_kCities[_cityIdx]} · ${_kDates[_dateIdx]} · ${_kTimes[_timeIdx]} · $_durLabel',
-            priceDisplay: _priceLabel,
-            priceValue: _priceValue,
-            color: widget.option.accentColor,
-            icon: widget.option.icon,
-          );
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => PaiementPage(items: [item]),
-            ),
-          );
-        },
+        onTap: d == null
+            ? null
+            : () {
+                final item = CartItem(
+                  id:
+                      'chauffeur_${widget.option.id}_${DateTime.now().millisecondsSinceEpoch}',
+                  type: 'chauffeur',
+                  name: 'Chauffeur ${widget.option.name} · ${d.name}',
+                  subtitle:
+                      '${_kCities[_cityIdx]} · ${_kDates[_dateIdx]} · ${_kTimes[_timeIdx]} · $_durLabel',
+                  priceDisplay: _priceLabel,
+                  priceValue: _priceValue,
+                  color: widget.option.accentColor,
+                  icon: widget.option.icon,
+                );
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => PaiementPage(items: [item]),
+                  ),
+                );
+              },
         child: Container(
           height: 58,
           decoration: BoxDecoration(
@@ -953,7 +937,7 @@ class _ChauffeurBookingPageState extends State<ChauffeurBookingPage>
             borderRadius: BorderRadius.circular(30),
             boxShadow: [
               BoxShadow(
-                color: AppColors.orange.withValues(alpha: 0.45),
+                color: AppColors.orange.withOpacity(0.45),
                 blurRadius: 18,
                 offset: const Offset(0, 8),
               ),
@@ -1052,9 +1036,8 @@ class _DotsIndicatorState extends State<_DotsIndicator>
             width: active ? 20 : 8,
             height: 8,
             decoration: BoxDecoration(
-              color: active
-                  ? widget.color
-                  : widget.color.withValues(alpha: 0.3),
+              color:
+                  active ? widget.color : widget.color.withValues(alpha: 0.3),
               borderRadius: BorderRadius.circular(4),
             ),
           );

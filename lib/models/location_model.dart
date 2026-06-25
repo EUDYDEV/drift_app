@@ -1,13 +1,13 @@
 import 'dart:math' as math;
 
-class Location {
+class AppLocation {
   final double latitude;
   final double longitude;
   final String address;
   final String? city;
   final String? country;
 
-  Location({
+  AppLocation({
     required this.latitude,
     required this.longitude,
     required this.address,
@@ -15,11 +15,11 @@ class Location {
     this.country,
   });
 
-  factory Location.fromJson(Map<String, dynamic> json) {
-    return Location(
-      latitude: json['latitude'] as double,
-      longitude: json['longitude'] as double,
-      address: json['address'] as String,
+  factory AppLocation.fromJson(Map<String, dynamic> json) {
+    return AppLocation(
+      latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
+      longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
+      address: json['address'] as String? ?? '',
       city: json['city'] as String?,
       country: json['country'] as String?,
     );
@@ -35,7 +35,7 @@ class Location {
     };
   }
 
-  double distanceTo(Location other) {
+  double distanceTo(AppLocation other) {
     // Haversine formula pour calculer distance
     const double earthRadius = 6371; // km
     final double dLat = _toRadians(other.latitude - latitude);

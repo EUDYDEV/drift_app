@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../theme/app_colors.dart';
+
+import '../models/cart_model.dart';
 import '../models/hotel_model.dart';
 import '../models/room_model.dart';
-import '../models/cart_model.dart';
+import '../services/hotel_service.dart';
+import '../theme/app_colors.dart';
 import 'paiement_page.dart';
 
 class HotelDetailPage extends StatefulWidget {
@@ -16,6 +18,9 @@ class HotelDetailPage extends StatefulWidget {
 
 class _HotelDetailPageState extends State<HotelDetailPage> {
   final PageController _imgController = PageController();
+  late final HotelService _hotelService;
+  List<RoomModel> _rooms = <RoomModel>[];
+  bool _roomsLoading = true;
   int _currentImg = 0;
   int _duration = 1; // Durée en jours/nuits
   String? _addedRoomId;
@@ -57,15 +62,54 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     return match['icon'] as IconData;
   }
 
+  List<RoomModel> get _activeRooms =>
+      _rooms.isEmpty ? widget.hotel.rooms : _rooms;
+
+  @override
+  void initState() {
+    super.initState();
+    _hotelService = HotelService();
+    _loadRooms();
+  }
+
+  Future<void> _loadRooms() async {
+    try {
+      if (widget.hotel.rooms.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _rooms = List<RoomModel>.from(widget.hotel.rooms);
+          _roomsLoading = false;
+        });
+        return;
+      }
+
+      final rooms = await _hotelService.getRoomsForHotel(
+        widget.hotel.id,
+        partnerId: widget.hotel.partnerId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _rooms = rooms.cast<RoomModel>();
+        _roomsLoading = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() => _roomsLoading = false);
+      }
+    }
+  }
+
   @override
   void dispose() {
     _imgController.dispose();
+    _hotelService.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final hotel = widget.hotel;
+    final rooms = _activeRooms;
     return Scaffold(
       backgroundColor: AppColors.white,
       body: Stack(
@@ -79,10 +123,22 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
               SliverToBoxAdapter(child: _buildBudgetLivingCard(hotel)),
               SliverToBoxAdapter(child: _buildMajordomeCard()),
               SliverToBoxAdapter(child: _buildRoomsTitle()),
+              SliverToBoxAdapter(
+                child: _roomsLoading
+                    ? const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 32),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.orange,
+                          ),
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
               SliverList(
                 delegate: SliverChildBuilderDelegate(
-                  (_, i) => _buildRoomCard(context, hotel.rooms[i]),
-                  childCount: hotel.rooms.length,
+                  (_, i) => _buildRoomCard(context, rooms[i]),
+                  childCount: rooms.length,
                 ),
               ),
               const SliverToBoxAdapter(child: SizedBox(height: 110)),
@@ -273,7 +329,8 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
 
   // ─── Équipements ──────────────────────────────────────────────────────────
   RoomModel _selectedBudgetRoom(HotelModel hotel) {
-    if (hotel.rooms.isEmpty) {
+    final rooms = _activeRooms;
+    if (rooms.isEmpty) {
       return RoomModel(
         id: 'fallback',
         name: 'Suite Signature',
@@ -283,10 +340,10 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
         gallerySeeds: <String>[],
       );
     }
-    final roomId = _budgetRoomId ?? hotel.rooms.first.id;
-    return hotel.rooms.firstWhere(
+    final roomId = _budgetRoomId ?? rooms.first.id;
+    return rooms.firstWhere(
       (room) => room.id == roomId,
-      orElse: () => hotel.rooms.first,
+      orElse: () => rooms.first,
     );
   }
 
@@ -414,7 +471,7 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
                   borderSide: BorderSide.none,
                 ),
               ),
-              items: hotel.rooms
+              items: _activeRooms
                   .map(
                     (item) => DropdownMenuItem<String>(
                       value: item.id,
@@ -942,12 +999,28 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
     CartModel.add(CartItem(
       id: room.id,
       type: 'hotel',
+      serviceType: 'chambre_hotel',
       name: widget.hotel.name,
       subtitle: '${room.name} · $_duration jour(s)',
       priceDisplay: '${room.priceValue * _duration} FCFA',
       priceValue: room.priceValue * _duration,
       color: AppColors.gradientBlue,
       icon: Icons.hotel,
+      partnerId: room.partnerId ?? widget.hotel.partnerId,
+      prestationId: room.prestationId,
+      partnerName: widget.hotel.name,
+      partnerType: 'hotel',
+      partnerCity: widget.hotel.city,
+      partnerAddress: widget.hotel.address,
+      partnerLatitude: widget.hotel.latitude,
+      partnerLongitude: widget.hotel.longitude,
+      metadata: <String, dynamic>{
+        'roomId': room.id,
+        'roomType': room.roomType,
+        'roomCapacity': room.capacity,
+        'stayDurationDays': _duration,
+        'video360Url': room.virtualTourUrl,
+      },
     ));
     setState(() => _addedRoomId = room.id);
     ScaffoldMessenger.of(context).showSnackBar(
@@ -973,12 +1046,28 @@ class _HotelDetailPageState extends State<HotelDetailPage> {
             CartItem(
               id: room.id,
               type: 'hotel',
+              serviceType: 'chambre_hotel',
               name: widget.hotel.name,
               subtitle: '${room.name} · $_duration jour(s)',
               priceDisplay: '${room.priceValue * _duration} FCFA',
               priceValue: room.priceValue * _duration,
               color: AppColors.gradientBlue,
               icon: Icons.hotel,
+              partnerId: room.partnerId ?? widget.hotel.partnerId,
+              prestationId: room.prestationId,
+              partnerName: widget.hotel.name,
+              partnerType: 'hotel',
+              partnerCity: widget.hotel.city,
+              partnerAddress: widget.hotel.address,
+              partnerLatitude: widget.hotel.latitude,
+              partnerLongitude: widget.hotel.longitude,
+              metadata: <String, dynamic>{
+                'roomId': room.id,
+                'roomType': room.roomType,
+                'roomCapacity': room.capacity,
+                'stayDurationDays': _duration,
+                'video360Url': room.virtualTourUrl,
+              },
             )
           ],
         ),

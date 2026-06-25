@@ -1,78 +1,202 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../theme/app_colors.dart';
-import '../../models/user_session.dart';
+import '../../services/auth_service.dart';
+import '../auth/login_screen.dart';
 import 'settings_page.dart';
 
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
 
   @override
+  State<ProfilePage> createState() => _ProfilePageState();
+}
+
+class _ProfilePageState extends State<ProfilePage> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final auth = context.read<AuthService>();
+      if (auth.isAuthenticated) {
+        auth.getProfile();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthService>();
+
     return Scaffold(
       backgroundColor: AppColors.white,
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            _buildHeader(context),
-            _buildStats(),
-            const SizedBox(height: 20),
-            _buildSection('Informations personnelles', [
-              _InfoRow(
-                  Icons.person_outline,
-                  'Nom complet',
-                  UserSession.name.isNotEmpty
-                      ? UserSession.name
-                      : 'Utilisateur'),
-              _InfoRow(
-                  Icons.email_outlined,
-                  'Email',
-                  UserSession.email.isNotEmpty
-                      ? UserSession.email
-                      : 'Non renseigné'),
-              const _InfoRow(Icons.phone_outlined, 'Téléphone', '+225 07 00 00 00'),
-              const _InfoRow(Icons.location_on_outlined, 'Ville',
-                  'Abidjan, Côte d\'Ivoire'),
-            ]),
-            const SizedBox(height: 16),
-            _buildSection('Préférences', [
-              const _InfoRow(Icons.language, 'Langue', 'Français'),
-              const _InfoRow(Icons.attach_money, 'Devise', 'FCFA'),
-            ]),
-            const SizedBox(height: 28),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Container(
-                height: 52,
-                decoration: BoxDecoration(
-                  gradient: AppColors.blueViolet,
-                  borderRadius: BorderRadius.circular(26),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.gradientBlue.withValues(alpha: 0.35),
-                      blurRadius: 14,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: Center(
-                  child: Text(
-                    'MODIFIER MON PROFIL',
-                    style: GoogleFonts.montserrat(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      letterSpacing: 0.8,
-                    ),
+      body: auth.isAuthenticated ? _buildProfileContent(context) : _buildLoginPrompt(context),
+    );
+  }
+
+  Widget _buildProfileContent(BuildContext context) {
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          _buildHeader(context),
+          _buildStats(),
+          const SizedBox(height: 20),
+          _buildSection('Informations personnelles', [
+            _InfoRow(
+              Icons.person_outline,
+              'Nom complet',
+              context.watch<AuthService>().userName.isNotEmpty
+                  ? context.watch<AuthService>().userName
+                  : 'Utilisateur'),
+            _InfoRow(
+              Icons.email_outlined,
+              'Email',
+              context.watch<AuthService>().userEmail.isNotEmpty
+                  ? context.watch<AuthService>().userEmail
+                  : 'Non renseigné'),
+            const _InfoRow(Icons.phone_outlined, 'Téléphone', 'Non renseigné'),
+            const _InfoRow(Icons.location_on_outlined, 'Ville', 'Non renseigné'),
+          ]),
+          const SizedBox(height: 16),
+          _buildSection('Préférences', [
+            const _InfoRow(Icons.language, 'Langue', 'Français'),
+            const _InfoRow(Icons.attach_money, 'Devise', 'FCFA'),
+          ]),
+          const SizedBox(height: 28),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Container(
+              height: 52,
+              decoration: BoxDecoration(
+                gradient: AppColors.blueViolet,
+                borderRadius: BorderRadius.circular(26),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.gradientBlue.withValues(alpha: 0.35),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text(
+                  'MODIFIER MON PROFIL',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 0.8,
                   ),
                 ),
               ),
             ),
-            const SizedBox(
-                height: 120), // Évite que le bouton soit caché par la barre
-          ],
-        ),
+          ),
+          const SizedBox(height: 120),
+        ],
       ),
+    );
+  }
+
+  Widget _buildLoginPrompt(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.only(
+            top: MediaQuery.of(context).padding.top + 32,
+            bottom: 32,
+            left: 24,
+            right: 24,
+          ),
+          decoration: const BoxDecoration(
+            gradient: AppColors.blueViolet,
+            borderRadius: BorderRadius.only(
+              bottomLeft: Radius.circular(36),
+              bottomRight: Radius.circular(36),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Mon Profil',
+                style: GoogleFonts.montserrat(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Connectez-vous pour afficher vos informations personnelles, vos voyages et vos réservations.',
+                style: GoogleFonts.montserrat(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.start,
+              children: [
+                const Icon(Icons.lock_outline, size: 80, color: Color(0xFF1E90FF)),
+                const SizedBox(height: 24),
+                Text(
+                  'Accès réservé',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.darkText,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Vous devez vous connecter pour voir votre profil. Aucun profil fictif ne sera affiché sans authentification.',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 14,
+                    color: AppColors.grayText,
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 30),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.blueViolet.colors.first,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      );
+                    },
+                    child: Text(
+                      'SE CONNECTER',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -122,38 +246,11 @@ class ProfilePage extends StatelessWidget {
               const SizedBox(width: 54),
             ],
           ),
-          const SizedBox(height: 24),
-          Stack(
-            children: [
-              Container(
-                width: 90,
-                height: 90,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.18),
-                  border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.5), width: 2.5),
-                ),
-                child: const Icon(Icons.person, color: Colors.white, size: 48),
-              ),
-              Positioned(
-                bottom: 0,
-                right: 0,
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: const BoxDecoration(
-                    color: AppColors.orange,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.edit, color: Colors.white, size: 14),
-                ),
-              ),
-            ],
-          ),
           const SizedBox(height: 12),
           Text(
-            UserSession.name.isNotEmpty ? UserSession.name : 'Utilisateur',
+            context.watch<AuthService>().userName.isNotEmpty
+                ? context.watch<AuthService>().userName
+                : 'Utilisateur',
             style: GoogleFonts.montserrat(
               color: Colors.white,
               fontSize: 20,

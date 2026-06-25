@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_colors.dart';
 import '../screens/menu/settings_page.dart';
 import '../screens/menu/profile_page.dart';
@@ -7,9 +8,9 @@ import '../screens/menu/premium_page.dart';
 import '../screens/menu/help_page.dart';
 import '../screens/menu/history_page.dart';
 import '../screens/menu/partner_dashboard_page.dart';
-import '../models/user_session.dart';
-import '../screens/auth/login_page.dart';
+import '../screens/auth/login_screen.dart';
 import '../screens/pages/majordome_brief_page.dart';
+import '../services/auth_service.dart';
 
 class MenuDrawer extends StatelessWidget {
   const MenuDrawer({super.key});
@@ -57,18 +58,19 @@ class MenuDrawer extends StatelessWidget {
                         Navigator.push(
                             context,
                             MaterialPageRoute(
-                                 builder: (_) => const PremiumPage()));
+                                builder: (_) => const PremiumPage()));
                       }),
                       _buildMenuItem(
-                          context, Icons.hotel_class_outlined, 'Mode Majordome', () {
+                          context, Icons.hotel_class_outlined, 'Mode Majordome',
+                          () {
                         Navigator.pop(context);
                         Navigator.push(
                             context,
                             MaterialPageRoute(
                                 builder: (_) => const MajordomeBriefPage()));
                       }),
-                      _buildMenuItem(
-                          context, Icons.space_dashboard_outlined, 'Dashboard partenaires', () {
+                      _buildMenuItem(context, Icons.space_dashboard_outlined,
+                          'Dashboard partenaires', () {
                         Navigator.pop(context);
                         Navigator.push(
                             context,
@@ -95,18 +97,18 @@ class MenuDrawer extends StatelessWidget {
                   ),
                 ),
                 const Divider(color: Color(0xFFEEEEEE)),
-                Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                  child:
-                      _buildMenuItem(context, Icons.logout, 'Déconnexion', () {
-                    UserSession.logout();
-                    Navigator.pushAndRemoveUntil(
-                        context,
-                        MaterialPageRoute(builder: (_) => const LoginPage()),
-                        (route) => false);
-                  }, color: Colors.red),
-                ),
+                if (context.watch<AuthService>().isAuthenticated)
+                  Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                    child: _buildMenuItem(context, Icons.logout, 'Déconnexion', () {
+                      context.read<AuthService>().logout();
+                      Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(builder: (_) => const LoginScreen()),
+                          (route) => false);
+                    }, color: Colors.red),
+                  ),
               ],
             ),
           ),
@@ -116,6 +118,16 @@ class MenuDrawer extends StatelessWidget {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final auth = context.watch<AuthService>();
+    final displayName = auth.isAuthenticated && auth.userName.isNotEmpty
+        ? auth.userName
+        : 'Invité';
+    final membershipLabel = !auth.isAuthenticated
+        ? 'Se connecter'
+        : auth.isVip
+            ? 'Membre VIP'
+            : 'Membre';
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: const BoxDecoration(
@@ -139,9 +151,7 @@ class MenuDrawer extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  UserSession.name.isNotEmpty
-                      ? UserSession.name
-                      : 'Utilisateur',
+                  displayName,
                   style: GoogleFonts.montserrat(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
@@ -153,11 +163,11 @@ class MenuDrawer extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: AppColors.orange.withValues(alpha:0.15),
+                    color: AppColors.orange.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    'Membre VIP',
+                    membershipLabel,
                     style: GoogleFonts.montserrat(
                       fontSize: 10,
                       fontWeight: FontWeight.w800,

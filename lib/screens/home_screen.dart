@@ -1,13 +1,23 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:async';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:geocoding/geocoding.dart' as geocoding;
 import '../models/location_model.dart';
+import 'package:provider/provider.dart';
 import '../services/location_service.dart';
-import '../theme/app_colors.dart';
+import '../services/auth_service.dart';
+import '../widgets/ride_timing_dialog.dart';
+import 'auth/login_screen.dart';
 import 'immediate_ride_screen.dart';
 import 'reservation_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final AppLocation? sharedLocation;
+  const HomeScreen({super.key, this.sharedLocation});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -15,49 +25,236 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late LocationService _locationService;
-  Location? _currentLocation;
+  AppLocation? _currentLocation;
   final TextEditingController _destinationController = TextEditingController();
-  bool _isLoadingLocation = true;
-  bool _showServiceOptions = false;
+  final FocusNode _destinationFocusNode = FocusNode();
+  List<Map<String, dynamic>> _suggestions = [];
+  final MapController _mapController = MapController();
+  LatLng? _destinationCoordinates;
+  List<LatLng> _routePoints = [];
+  Timer? _debounce;
+  bool _isSearching = false;
+  RideTimingSelection? _timingSelection;
 
   @override
   void initState() {
     super.initState();
     _locationService = LocationService();
+    _locationService.addListener(() {
+      if (mounted) {
+        setState(() => _currentLocation = _locationService.currentLocation);
+      }
+    });
+    _destinationController.addListener(_onTextChanged);
     _initializeLocation();
   }
 
-  void _onDestinationChanged() {
-    final hasText = _destinationController.text.trim().isNotEmpty;
-    if (hasText != _showServiceOptions) {
-      setState(() => _showServiceOptions = hasText);
-    }
-  }
-
-  Future<void> _initializeLocation() async {
-    final location = await _locationService.getCurrentLocation();
+  void _initializeLocation() async {
+    final loc = await _locationService.getCurrentLocation();
     if (mounted) {
-      setState(() {
-        _currentLocation = location;
-        _isLoadingLocation = false;
-      });
-      // Démarre l'écoute en temps réel
-      _destinationController.addListener(_onDestinationChanged);
+      setState(() => _currentLocation = loc);
+      if (widget.sharedLocation != null) {
+        _applySharedDestination(widget.sharedLocation!);
+      }
       _locationService.startLocationListener();
     }
   }
 
-  void _goToImmediateRide() {
-    if (_destinationController.text.isEmpty) {
+  void _applySharedDestination(AppLocation sharedLocation) {
+    setState(() {
+      _destinationController.text = sharedLocation.address;
+      _destinationCoordinates = LatLng(
+        sharedLocation.latitude,
+        sharedLocation.longitude,
+      );
+      _suggestions = [];
+    });
+    if (_currentLocation != null) {
+      _fetchRoute(_destinationCoordinates!);
+      _fitMap(_destinationCoordinates!);
+    }
+  }
+
+  void _onTextChanged() {
+    final text = _destinationController.text.trim();
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (text.length >= 3) {
+        _searchLocation(text);
+      } else {
+        setState(() => _suggestions = []);
+      }
+    });
+  }
+
+  Future<void> _searchLocation(String query) async {
+    setState(() => _isSearching = true);
+    final url = Uri.parse(
+        'https://photon.komoot.io/api/?q=${Uri.encodeComponent(query)}&lat=5.3484&lon=-4.0305&limit=5');
+    try {
+      final request = await HttpClient().getUrl(url);
+      final response = await request.close();
+      if (response.statusCode == 200) {
+        final body = await response.transform(utf8.decoder).join();
+        final data = jsonDecode(body);
+        final List features = data['features'];
+        if (mounted) {
+          setState(() {
+            _suggestions = features.map((f) {
+              final props = f['properties'];
+              final coords = f['geometry']['coordinates'];
+              return {
+                'display':
+                    '${props['name'] ?? ''}, ${props['city'] ?? props['state'] ?? 'Abidjan'}',
+                'lat': coords[1],
+                'lon': coords[0],
+              };
+            }).toList();
+            _isSearching = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
+  Future<void> _validateDestination(String address) async {
+    if (address.isEmpty) return;
+    setState(() => _isSearching = true);
+    try {
+      final locations =
+          await geocoding.locationFromAddress("$address, Abidjan");
+      if (locations.isNotEmpty) {
+        final loc = locations.first;
+        _selectLocation(
+            {'display': address, 'lat': loc.latitude, 'lon': loc.longitude});
+        return;
+      }
+    } catch (e) {
+      if (_suggestions.isNotEmpty) {
+        _selectLocation(_suggestions.first);
+        return;
+      }
+    }
+    setState(() => _isSearching = false);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Lieu introuvable. Touchez la carte pour choisir.')));
+  }
+
+  void _selectLocation(Map<String, dynamic> suggestion) {
+    final dest = LatLng(suggestion['lat'], suggestion['lon']);
+    setState(() {
+      _destinationController.text = suggestion['display'];
+      _destinationCoordinates = dest;
+      _suggestions = [];
+      _isSearching = false;
+    });
+    _fetchRoute(dest);
+    _fitMap(dest);
+    FocusScope.of(context).unfocus();
+    _continueRideFlow();
+  }
+
+  Future<void> _chooseRideTiming() async {
+    _destinationFocusNode.unfocus();
+    final selection = await showRideTimingDialog(context);
+    if (selection == null || !mounted) return;
+
+    setState(() => _timingSelection = selection);
+    _destinationFocusNode.requestFocus();
+  }
+
+  void _continueRideFlow() {
+    final timing = _timingSelection;
+    if (timing == null) return;
+
+    if (timing.isImmediate) {
+      _openImmediateRideFlow();
+    } else {
+      _openReservationFlow(scheduledStart: timing.scheduledStart);
+    }
+  }
+
+  Future<void> _fetchRoute(LatLng destination) async {
+    if (_currentLocation == null) return;
+    final url = Uri.parse(
+        'https://router.project-osrm.org/route/v1/driving/${_currentLocation!.longitude},${_currentLocation!.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson');
+    try {
+      final request = await HttpClient().getUrl(url);
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+      final data = jsonDecode(body);
+      if (data['routes'] != null && data['routes'].isNotEmpty) {
+        final List coords = data['routes'][0]['geometry']['coordinates'];
+        if (mounted) {
+          setState(() => _routePoints = coords
+              .map((c) => LatLng(c[1].toDouble(), c[0].toDouble()))
+              .toList());
+        }
+      }
+    } catch (e) {
+      setState(() => _routePoints = [
+            LatLng(_currentLocation!.latitude, _currentLocation!.longitude),
+            destination
+          ]);
+    }
+  }
+
+  void _fitMap(LatLng dest) {
+    if (_currentLocation == null) return;
+    final bounds = LatLngBounds.fromPoints([
+      LatLng(_currentLocation!.latitude, _currentLocation!.longitude),
+      dest
+    ]);
+    _mapController.fitCamera(
+        CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)));
+  }
+
+  AppLocation? _resolvedDestinationLocation() {
+    final coordinates = _destinationCoordinates;
+    if (coordinates == null) {
+      return widget.sharedLocation;
+    }
+
+    return AppLocation(
+      latitude: coordinates.latitude,
+      longitude: coordinates.longitude,
+      address: _destinationController.text.trim().isEmpty
+          ? 'Destination'
+          : _destinationController.text.trim(),
+      city: 'Abidjan',
+      country: "Cote d'Ivoire",
+    );
+  }
+
+  void _openLogin() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+    );
+  }
+
+  void _openImmediateRideFlow() {
+    if (!context.read<AuthService>().isAuthenticated) {
+      _openLogin();
+      return;
+    }
+
+    if (_currentLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Veuillez entrer une destination')),
+        const SnackBar(
+          content: Text('Votre position actuelle est en cours de recuperation.'),
+        ),
       );
       return;
     }
-    // Ajout d'une vérification pour s'assurer que la localisation est disponible
-    if (_currentLocation == null) {
+
+    final destinationText = _destinationController.text.trim();
+    if (destinationText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Impossible d\'obtenir votre position actuelle. Veuillez réessayer.')),
+        const SnackBar(content: Text('Veuillez renseigner une destination.')),
       );
       return;
     }
@@ -67,17 +264,34 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(
         builder: (context) => ImmediateRideScreen(
           currentLocation: _currentLocation!,
-          destination: _destinationController.text,
+          destination: destinationText,
+          destinationLocation: _resolvedDestinationLocation(),
         ),
       ),
     );
   }
 
-  void _goToReservation() {
+  void _openReservationFlow({DateTime? scheduledStart}) {
+    if (!context.read<AuthService>().isAuthenticated) {
+      _openLogin();
+      return;
+    }
+
+    final destinationText = _destinationController.text.trim();
+    if (destinationText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Veuillez renseigner une destination.')),
+      );
+      return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const ReservationScreen(),
+        builder: (context) => ReservationScreen(
+          initialCity: destinationText,
+          initialDepartureDate: scheduledStart,
+        ),
       ),
     );
   }
@@ -85,167 +299,139 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _locationService.stopLocationListener();
-    _locationService.dispose();
-    _destinationController.removeListener(_onDestinationChanged);
     _destinationController.dispose();
+    _destinationFocusNode.dispose();
+    _debounce?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.white,
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
-          // MAP BACKGROUND (placeholder)
-          Container(
+          SizedBox(
             width: double.infinity,
-            height: MediaQuery.of(context).size.height * 0.5,
-            color: Colors.grey[300],
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.location_on, size: 50, color: Colors.blue),
-                  const SizedBox(height: 10),
-                  if (_isLoadingLocation)
-                    const Text('Localisation en cours...')
-                  else if (_currentLocation != null)
-                    Text(
-                      _currentLocation!.address,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 14),
-                    )
-                  else
-                    const Text('Impossible de localiser'),
-                ],
-              ),
-            ),
+            height: MediaQuery.of(context).size.height * 0.55,
+            child: _currentLocation != null
+                ? FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter: LatLng(_currentLocation!.latitude,
+                          _currentLocation!.longitude),
+                      initialZoom: 15,
+                      onTap: (tapPos, point) => _selectLocation({
+                        'display': 'Point choisi',
+                        'lat': point.latitude,
+                        'lon': point.longitude
+                      }),
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName:
+                            'ci.drift.travel.app.v1', // FIX 403
+                      ),
+                      if (_routePoints.isNotEmpty)
+                        PolylineLayer(polylines: [
+                          Polyline(
+                              points: _routePoints,
+                              strokeWidth: 5,
+                              color: const Color(0xFF1E90FF))
+                        ]),
+                      MarkerLayer(markers: [
+                        Marker(
+                            point: LatLng(_currentLocation!.latitude,
+                                _currentLocation!.longitude),
+                            width: 40,
+                            height: 40,
+                            child: const Icon(Icons.my_location,
+                                color: Colors.blue, size: 30)),
+                        if (_destinationCoordinates != null)
+                          Marker(
+                              point: _destinationCoordinates!,
+                              width: 40,
+                              height: 40,
+                              child: const Icon(Icons.location_on,
+                                  color: Colors.red, size: 40)),
+                      ]),
+                    ],
+                  )
+                : const Center(child: CircularProgressIndicator()),
           ),
-
-          // MAIN CONTENT
           SingleChildScrollView(
             child: Column(
               children: [
-                // Espacement pour la carte
-                SizedBox(height: MediaQuery.of(context).size.height * 0.4),
-
-                // CARD PRINCIPALE
+                SizedBox(height: MediaQuery.of(context).size.height * 0.48),
                 Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16),
                   padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: AppColors.white,
-                    borderRadius: BorderRadius.circular(24),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha:0.1),
-                        blurRadius: 15,
-                        offset: const Offset(0, -5),
-                      )
-                    ],
-                  ),
+                  decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius:
+                          BorderRadius.vertical(top: Radius.circular(30)),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black12, blurRadius: 20)
+                      ]),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // TITRE
-                      Text(
-                        'Où allez-vous?',
-                        style: GoogleFonts.poppins(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
+                      Text('Où allez-vous?',
+                          style: GoogleFonts.poppins(
+                              fontSize: 22, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 20),
-
-                      // CHAMP DE DESTINATION
                       TextField(
                         controller: _destinationController,
+                        focusNode: _destinationFocusNode,
+                        onTap: _timingSelection == null
+                            ? _chooseRideTiming
+                            : null,
+                        textInputAction: TextInputAction.search,
+                        onSubmitted: _validateDestination,
                         decoration: InputDecoration(
-                          hintText: 'Entrez votre destination',
-                          prefixIcon: const Icon(Icons.location_on_outlined),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(color: Colors.grey),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey[300]!),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color(0xFF1E90FF),
-                              width: 2,
-                            ),
-                          ),
+                          hintText: 'Palmeraie, Maison B...',
+                          prefixIcon: const Icon(Icons.search,
+                              color: Color(0xFF1E90FF)),
+                          suffixIcon: _isSearching
+                              ? const Padding(
+                                  padding: EdgeInsets.all(12),
+                                  child: SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2)))
+                              : null,
                           filled: true,
-                          fillColor: Colors.grey[50],
+                          fillColor: Colors.grey[100],
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(15),
+                              borderSide: BorderSide.none),
                         ),
                       ),
-                      const SizedBox(height: 24),
-
-                      if (_showServiceOptions) ...[
-                        // DEUX OPTIONS
-                        Text(
-                          'Choisissez votre service',
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.grey[600],
+                      if (_suggestions.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(top: 8),
+                          constraints: const BoxConstraints(maxHeight: 200),
+                          decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(15),
+                              border: Border.all(color: Colors.grey[200]!)),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: _suggestions.length,
+                            itemBuilder: (context, index) => ListTile(
+                              leading: const Icon(Icons.location_on,
+                                  color: Colors.grey, size: 20),
+                              title: Text(_suggestions[index]['display'],
+                                  style: const TextStyle(fontSize: 14)),
+                              onTap: () => _selectLocation(_suggestions[index]),
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 12),
-
-                        // OPTION 1: COMMANDER IMMÉDIATEMENT
-                        _buildOptionButton(
-                          title: 'Commander immédiatement',
-                          subtitle: 'Un chauffeur arrive en quelques minutes',
-                          icon: Icons.directions_car,
-                          color: const Color(0xFF1E90FF),
-                          onTap: _goToImmediateRide,
-                        ),
-                        const SizedBox(height: 12),
-
-                        // OPTION 2: RÉSERVER POUR PLUS TARD
-                        _buildOptionButton(
-                          title: 'Réserver pour plus tard',
-                          subtitle: 'Transport + Hôtel avec paiement à la fin',
-                          icon: Icons.calendar_today,
-                          color: const Color(0xFF00B894),
-                          onTap: _goToReservation,
-                        ),
-                      ],
-                      const SizedBox(height: 20),
-
-                      // INFO
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.blue[50],
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.info, color: Colors.blue[700], size: 20),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Prices affichés avec taxes incluses',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  color: Colors.blue[700],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 30),
               ],
             ),
           ),
@@ -254,64 +440,4 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildOptionButton({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            border: Border.all(color: color, width: 2),
-            borderRadius: BorderRadius.circular(12),
-            color: color.withValues(alpha:0.05),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha:0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: color, size: 24),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(Icons.arrow_forward_ios, color: color, size: 16),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../theme/app_colors.dart';
-import '../../models/user_session.dart';
+import '../../services/auth_service.dart';
+import '../auth/login_screen.dart';
 
 class PaymentMethodsPage extends StatefulWidget {
   const PaymentMethodsPage({super.key});
@@ -26,30 +28,11 @@ class _PaymentMethod {
     required this.detail,
     required this.color,
     required this.badge,
-    this.isDefault = false,
-  });
+  }) : isDefault = false;
 }
 
 class _PaymentMethodsPageState extends State<PaymentMethodsPage> {
-  final List<_PaymentMethod> _methods = [
-    _PaymentMethod(
-      id: 'visa_1',
-      type: 'card',
-      name: 'Visa Personnelle',
-      detail: '**** **** **** 4242',
-      color: const Color(0xFF1A1F71),
-      badge: 'VISA',
-      isDefault: true,
-    ),
-    _PaymentMethod(
-      id: 'om_1',
-      type: 'mobile',
-      name: 'Orange Money',
-      detail: '+225 07 00 00 00',
-      color: const Color(0xFFFF7900),
-      badge: 'OM',
-    ),
-  ];
+  final List<_PaymentMethod> _methods = [];
 
   static const _addOptions = [
     _AddOption('Carte bancaire', Icons.credit_card, Color(0xFF1A1F71)),
@@ -93,8 +76,81 @@ class _PaymentMethodsPageState extends State<PaymentMethodsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthService>();
     final cards = _methods.where((m) => m.type == 'card').toList();
     final mobile = _methods.where((m) => m.type == 'mobile').toList();
+
+    if (!auth.isAuthenticated) {
+      return Scaffold(
+        backgroundColor: AppColors.lightGray,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new,
+                color: AppColors.darkText, size: 20),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text(
+            'Moyens de paiement',
+            style: GoogleFonts.montserrat(
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+              color: AppColors.darkText,
+            ),
+          ),
+          centerTitle: true,
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.lock_outline,
+                    size: 72, color: AppColors.gradientBlue),
+                const SizedBox(height: 24),
+                Text(
+                  'Veuillez vous connecter pour gérer vos moyens de paiement.',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 16,
+                    color: AppColors.darkText,
+                    height: 1.5,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 32),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                      );
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.blueViolet.colors.first,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                    ),
+                    child: Text(
+                      'SE CONNECTER',
+                      style: GoogleFonts.montserrat(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColors.lightGray,
@@ -167,8 +223,7 @@ class _PaymentMethodsPageState extends State<PaymentMethodsPage> {
               const SizedBox(height: 28),
             ],
             _buildAddButton(),
-            if (_methods.isEmpty)
-              _buildEmptyState(),
+            if (_methods.isEmpty) _buildEmptyState(),
           ],
         ),
       ),
@@ -409,7 +464,10 @@ class _CreditCardWidget extends StatelessWidget {
                                 color: Colors.white54,
                                 fontSize: 8,
                                 letterSpacing: 1)),
-                        Text(UserSession.name.isNotEmpty ? UserSession.name : '—',
+                        Text(
+                            context.watch<AuthService>().userName.isNotEmpty
+                                ? context.watch<AuthService>().userName
+                                : '—',
                             style: GoogleFonts.montserrat(
                                 color: Colors.white,
                                 fontSize: 12,
@@ -458,8 +516,7 @@ class _CreditCardWidget extends StatelessWidget {
             const Icon(Icons.delete_outline, size: 18, color: Colors.red),
             const SizedBox(width: 10),
             Text('Supprimer',
-                style: GoogleFonts.montserrat(
-                    fontSize: 13, color: Colors.red)),
+                style: GoogleFonts.montserrat(fontSize: 13, color: Colors.red)),
           ]),
         ),
       ],
@@ -563,11 +620,10 @@ class _MobileMethodTile extends StatelessWidget {
             ),
           ),
           PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert,
-                color: Colors.grey[400], size: 20),
+            icon: Icon(Icons.more_vert, color: Colors.grey[400], size: 20),
             color: Colors.white,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             itemBuilder: (_) => [
               PopupMenuItem(
                 value: 'default',
@@ -582,8 +638,7 @@ class _MobileMethodTile extends StatelessWidget {
               PopupMenuItem(
                 value: 'delete',
                 child: Row(children: [
-                  const Icon(Icons.delete_outline,
-                      size: 18, color: Colors.red),
+                  const Icon(Icons.delete_outline, size: 18, color: Colors.red),
                   const SizedBox(width: 10),
                   Text('Supprimer',
                       style: GoogleFonts.montserrat(
@@ -613,8 +668,7 @@ class _AddOption {
 class _AddMethodSheet extends StatelessWidget {
   final List<_AddOption> options;
   final void Function(_AddOption) onSelect;
-  const _AddMethodSheet(
-      {required this.options, required this.onSelect});
+  const _AddMethodSheet({required this.options, required this.onSelect});
 
   @override
   Widget build(BuildContext context) {

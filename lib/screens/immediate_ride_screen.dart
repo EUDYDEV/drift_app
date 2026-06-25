@@ -8,13 +8,15 @@ import '../theme/app_colors.dart';
 import 'driver_availability_screen.dart';
 
 class ImmediateRideScreen extends StatefulWidget {
-  final Location currentLocation;
+  final AppLocation currentLocation;
   final String destination;
+  final AppLocation? destinationLocation;
 
   const ImmediateRideScreen({
     super.key,
     required this.currentLocation,
     required this.destination,
+    this.destinationLocation,
   });
 
   @override
@@ -26,7 +28,7 @@ class _ImmediateRideScreenState extends State<ImmediateRideScreen> {
   late LocationService _locationService;
   List<RideOption> _rideOptions = [];
   bool _isLoading = true;
-  Location? _destinationLocation;
+  AppLocation? _destinationLocation;
   RideOption? _selectedOption;
 
   @override
@@ -40,7 +42,7 @@ class _ImmediateRideScreenState extends State<ImmediateRideScreen> {
   Future<void> _loadRideOptions() async {
     try {
       // Obtient les coordonnées de destination
-      _destinationLocation =
+      _destinationLocation = widget.destinationLocation ??
           await _locationService.getCoordinatesFromAddress(widget.destination);
 
       if (_destinationLocation != null) {
@@ -59,6 +61,13 @@ class _ImmediateRideScreenState extends State<ImmediateRideScreen> {
             _isLoading = false;
           });
         }
+      } else if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Impossible de localiser cette destination.'),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -165,7 +174,7 @@ class _ImmediateRideScreenState extends State<ImmediateRideScreen> {
                           ),
                           borderRadius: BorderRadius.circular(12),
                           color: isSelected
-                              ? const Color(0xFF1E90FF).withValues(alpha:0.05)
+                              ? const Color(0xFF1E90FF).withValues(alpha: 0.05)
                               : Colors.white,
                         ),
                         child: Row(
@@ -178,7 +187,8 @@ class _ImmediateRideScreenState extends State<ImmediateRideScreen> {
                                     children: [
                                       Icon(
                                         option.type == RideType.withDriver
-                                            ? Icons.person // Changed from person_filled
+                                            ? Icons
+                                                .person // Changed from person_filled
                                             : Icons.directions_car,
                                         color: const Color(0xFF1E90FF),
                                         size: 20,

@@ -1,10 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_colors.dart';
 import 'menu_drawer.dart';
+import '../services/location_service.dart';
+import '../models/location_model.dart';
+import 'position_actions_bottom_sheet.dart';
 
-class CustomHeader extends StatelessWidget {
+class CustomHeader extends StatefulWidget {
   const CustomHeader({super.key});
+
+  @override
+  State<CustomHeader> createState() => _CustomHeaderState();
+}
+
+class _CustomHeaderState extends State<CustomHeader> {
+  late final LocationService _locationService;
+  AppLocation? _currentLocation;
+
+  @override
+  void initState() {
+    super.initState();
+    _locationService = context.read<LocationService>();
+    _loadCurrentLocation();
+  }
+
+  Future<void> _loadCurrentLocation() async {
+    final location = await _locationService.getCurrentLocation();
+    if (mounted) {
+      setState(() => _currentLocation = location);
+    }
+  }
 
   void _openMenu(BuildContext context) {
     showGeneralDialog(
@@ -37,7 +63,7 @@ class CustomHeader extends StatelessWidget {
         color: AppColors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha:0.06),
+            color: Colors.black.withValues(alpha: 0.06),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -49,43 +75,70 @@ class CustomHeader extends StatelessWidget {
             onTap: () => _openMenu(context),
             child: _buildDriFtIcon(),
           ),
+          // Suppression du SizedBox asymétrique ici pour garantir le centrage parfait
           Expanded(
-            child: Center(
-              child: GestureDetector(
-                onTap: () => _openMenu(context),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'DriFt',
-                      style: GoogleFonts.montserrat(
-                        fontSize: 26,
-                        fontWeight: FontWeight.w900,
-                        color: AppColors.darkText,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        gradient: AppColors.blueViolet,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'E-PROJECT',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GestureDetector(
+                  onTap: () => _openMenu(context),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'DriFt',
                         style: GoogleFonts.montserrat(
-                          fontSize: 6,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: 0.5,
+                          fontSize: 26,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.darkText,
+                          letterSpacing: 1,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(
+                          gradient: AppColors.blueViolet,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'E-PROJECT',
+                          style: GoogleFonts.montserrat(
+                            fontSize: 6,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                if (_currentLocation != null)
+                  GestureDetector(
+                    onTap: () async {
+                      final updated = await showPositionActionsBottomSheet(
+                        context: context,
+                        currentLocation: _currentLocation!,
+                        locationService: _locationService,
+                      );
+                      if (updated != null && mounted) {
+                        setState(() => _currentLocation = updated);
+                      }
+                    },
+                    child: Text(
+                      'Ma position',
+                      style: GoogleFonts.montserrat(
+                        fontSize: 7,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ),
           _buildGuestIcon(),
@@ -96,7 +149,7 @@ class CustomHeader extends StatelessWidget {
 
   Widget _buildDriFtIcon() {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(10), // Arrondi pour un look premium
+      borderRadius: BorderRadius.circular(10),
       child: Image.asset(
         'assets/images/logo.png',
         width: 40,

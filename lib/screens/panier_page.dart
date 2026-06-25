@@ -16,6 +16,7 @@ class _PanierPageState extends State<PanierPage> {
   void initState() {
     super.initState();
     CartModel.itemCount.addListener(_rebuild);
+    CartModel.revision.addListener(_rebuild);
   }
 
   void _rebuild() {
@@ -25,6 +26,7 @@ class _PanierPageState extends State<PanierPage> {
   @override
   void dispose() {
     CartModel.itemCount.removeListener(_rebuild);
+    CartModel.revision.removeListener(_rebuild);
     super.dispose();
   }
 

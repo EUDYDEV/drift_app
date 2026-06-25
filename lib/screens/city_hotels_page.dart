@@ -1,31 +1,51 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../theme/app_colors.dart';
-import '../data/hotels_data.dart';
 import '../models/hotel_model.dart';
+import '../services/hotel_service.dart';
 import 'hotel_detail_page.dart';
 
-class CityHotelsPage extends StatelessWidget {
+class CityHotelsPage extends StatefulWidget {
   final String city;
   const CityHotelsPage({super.key, required this.city});
 
   @override
-  Widget build(BuildContext context) {
-    final hotels = getHotelsByCity(city);
+  State<CityHotelsPage> createState() => _CityHotelsPageState();
+}
 
+class _CityHotelsPageState extends State<CityHotelsPage> {
+  late Future<List<Hotel>> _hotelsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _hotelsFuture = HotelService().getHotelsInCity(widget.city);
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.white,
       body: Column(
         children: [
           _buildHeader(context),
           Expanded(
-            child: hotels.isEmpty
-                ? _buildEmpty()
-                : ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-                    itemCount: hotels.length,
-                    itemBuilder: (_, i) => _buildHotelCard(context, hotels[i]),
-                  ),
+            child: FutureBuilder<List<Hotel>>(
+              future: _hotelsFuture,
+              builder: (_, snap) {
+                if (snap.connectionState != ConnectionState.done) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final hotels = snap.data ?? [];
+                return hotels.isEmpty
+                    ? _buildEmpty()
+                    : ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                        itemCount: hotels.length,
+                        itemBuilder: (_, i) => _buildHotelCard(context, hotels[i]),
+                      );
+              },
+            ),
           ),
         ],
       ),
@@ -50,7 +70,7 @@ class CityHotelsPage extends StatelessWidget {
               height: 40,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha:0.1),
+                color: Colors.white.withValues(alpha: 0.1),
               ),
               child: const Icon(Icons.arrow_back_ios_new,
                   color: Colors.white, size: 18),
@@ -62,19 +82,25 @@ class CityHotelsPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Hôtels à $city',
+                  'Hôtels à ${widget.city}',
                   style: GoogleFonts.montserrat(
                     color: Colors.white,
                     fontSize: 20,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                Text(
-                  '${getHotelsByCity(city).length} établissements disponibles',
-                  style: GoogleFonts.montserrat(
-                    color: Colors.white.withValues(alpha:0.6),
-                    fontSize: 12,
-                  ),
+                FutureBuilder<List<Hotel>>(
+                  future: _hotelsFuture,
+                  builder: (_, snap) {
+                    final count = snap.data?.length ?? 0;
+                    return Text(
+                      '$count établissements disponibles',
+                      style: GoogleFonts.montserrat(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontSize: 12,
+                      ),
+                    );
+                  },
                 ),
               ],
             ),
@@ -85,7 +111,8 @@ class CityHotelsPage extends StatelessWidget {
     );
   }
 
-  Widget _buildHotelCard(BuildContext context, HotelModel hotel) {
+  Widget _buildHotelCard(BuildContext context, Hotel hotel) {
+    final coverImage = hotel.coverImage;
     return GestureDetector(
       onTap: () => Navigator.push(
         context,
@@ -98,7 +125,7 @@ class CityHotelsPage extends StatelessWidget {
           borderRadius: BorderRadius.circular(22),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha:0.08),
+              color: Colors.black.withValues(alpha: 0.08),
               blurRadius: 18,
               offset: const Offset(0, 5),
             ),
@@ -110,69 +137,29 @@ class CityHotelsPage extends StatelessWidget {
             ClipRRect(
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(22)),
-              child: Stack(
-                children: [
-                  Image.network(
-                    hotel.imageSeeds[0],
-                    height: 180,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+              child: coverImage.isNotEmpty
+                  ? Image.network(
+                      coverImage,
+                      height: 180,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 180,
+                        color: AppColors.lightGray,
+                        child: const Center(
+                          child: Icon(Icons.hotel,
+                              size: 50, color: AppColors.lightText),
+                        ),
+                      ),
+                    )
+                  : Container(
                       height: 180,
                       color: AppColors.lightGray,
                       child: const Center(
-                          child: Icon(Icons.hotel, size: 50, color: AppColors.lightText)),
-                    ),
-                  ),
-                  Positioned(
-                    top: 12,
-                    right: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha:0.5),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.star,
-                              color: Colors.amber, size: 13),
-                          const SizedBox(width: 3),
-                          Text(
-                            hotel.rating.toString(),
-                            style: GoogleFonts.montserrat(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700),
-                          ),
-                        ],
+                        child: Icon(Icons.hotel,
+                            size: 50, color: AppColors.lightText),
                       ),
                     ),
-                  ),
-                  Positioned(
-                    bottom: 12,
-                    left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.orange,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        hotel.category,
-                        style: GoogleFonts.montserrat(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
             ),
             Padding(
               padding: const EdgeInsets.all(16),
@@ -245,12 +232,11 @@ class CityHotelsPage extends StatelessWidget {
           ShaderMask(
             blendMode: BlendMode.srcIn,
             shaderCallback: (b) => AppColors.blueViolet.createShader(b),
-            child:
-                const Icon(Icons.hotel, size: 60, color: Colors.white),
+            child: const Icon(Icons.hotel, size: 60, color: Colors.white),
           ),
           const SizedBox(height: 16),
           Text(
-            'Aucun hôtel pour $city',
+            'Aucun hôtel pour ${widget.city}',
             style: GoogleFonts.montserrat(
                 fontSize: 16,
                 fontWeight: FontWeight.w600,

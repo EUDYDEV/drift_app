@@ -1,19 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../models/hotel_model.dart'; // This now defines 'Hotel'
-import '../models/room_model.dart'; // This defines 'Room'
+import 'package:panorama/panorama.dart';
+import 'package:provider/provider.dart';
+
+import '../models/cart_model.dart';
+import '../models/hotel_model.dart';
+import '../models/room_model.dart';
+import '../services/auth_service.dart';
 import '../services/hotel_service.dart';
 import '../theme/app_colors.dart';
-import 'booking_summary_screen.dart';
+import 'auth/login_screen.dart';
 
 class HotelSelectionScreen extends StatefulWidget {
   final Hotel hotel;
   final String city;
+  final VoidCallback onBack;
 
   const HotelSelectionScreen({
     super.key,
     required this.hotel,
     required this.city,
+    required this.onBack,
   });
 
   @override
@@ -21,15 +28,10 @@ class HotelSelectionScreen extends StatefulWidget {
 }
 
 class _HotelSelectionScreenState extends State<HotelSelectionScreen> {
-  late HotelService _hotelService;
-  List<Room> _rooms = [];
+  late final HotelService _hotelService;
+  List<RoomModel> _rooms = <RoomModel>[];
   bool _isLoading = true;
-  final Map<String, int> _selectedRooms = {}; // roomId -> quantity
-  double _totalPrice = 0;
-  
-  // Gestion flexible des dates
-  DateTime _checkIn = DateTime.now().add(const Duration(days: 1));
-  DateTime _checkOut = DateTime.now().add(const Duration(days: 2));
+  RoomModel? _detailedRoom;
 
   @override
   void initState() {
@@ -40,524 +42,478 @@ class _HotelSelectionScreenState extends State<HotelSelectionScreen> {
 
   Future<void> _loadRooms() async {
     try {
-      final rooms = await _hotelService.getRoomsForHotel(widget.hotel.id);
-      if (mounted) {
+      if (widget.hotel.rooms.isNotEmpty) {
+        if (!mounted) return;
         setState(() {
-          _rooms = rooms;
+          _rooms = List<RoomModel>.from(widget.hotel.rooms);
           _isLoading = false;
         });
+        return;
       }
-    } catch (e) {
+
+      final rooms = await _hotelService.getRoomsForHotel(
+        widget.hotel.id,
+        partnerId: widget.hotel.partnerId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _rooms = rooms.cast<RoomModel>();
+        _isLoading = false;
+      });
+    } catch (_) {
       if (mounted) {
         setState(() => _isLoading = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e')),
-        );
       }
     }
-  }
-
-  void _selectDateRange() async {
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      initialDateRange: DateTimeRange(start: _checkIn, end: _checkOut),
-    );
-    if (picked != null) {
-      setState(() {
-        _checkIn = picked.start;
-        _checkOut = picked.end;
-        _calculateTotal();
-      });
-    }
-  }
-
-  void _toggleRoom(String roomId, int quantity) {
-    setState(() {
-      if (quantity > 0) {
-        _selectedRooms[roomId] = quantity;
-      } else {
-        _selectedRooms.remove(roomId);
-      }
-      _calculateTotal();
-    });
-  }
-
-  void _calculateTotal() {
-    double total = 0;
-    final nights = _checkOut.difference(_checkIn).inDays;
-    final actualNights = nights > 0 ? nights : 1;
-
-    _selectedRooms.forEach((roomId, quantity) {
-      final room = _rooms.firstWhere((r) => r.id == roomId);
-      total += room.price * quantity * actualNights;
-    });
-
-    _totalPrice = total;
-  }
-
-  void _proceedToBooking() {
-    if (_selectedRooms.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Veuillez sélectionner au moins une chambre')),
-      );
-      return;
-    }
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => BookingSummaryScreen(
-          hotel: widget.hotel,
-          departureDate: _checkIn,
-          returnDate: _checkOut,
-          selectedRooms: _selectedRooms,
-          totalPrice: _totalPrice,
-          city: widget.city,
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _hotelService.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final nights = _checkOut.difference(_checkIn).inDays;
-    final displayNights = nights > 0 ? nights : 1;
-    
-    // Détermination dynamique des labels
-    final String type = widget.hotel.type;
-    final bool isHotel = type == 'hotel';
-    final bool isRestau = type == 'restaurant';
-    
-    final String sectionTitle = isHotel ? 'Chambres disponibles' : (isRestau ? 'Tables disponibles' : 'Séances disponibles');
-    final String unitLabel = isHotel ? 'nuit' : (isRestau ? 'réservation' : 'billet');
-    final String tourLabel = isHotel ? 'Visiter la chambre (3D)' : (isRestau ? 'Voir la table et la vue (3D)' : 'Voir la salle (3D)');
-    final String emptyLabel = isHotel ? 'Aucune chambre disponible' : 'Aucune table disponible';
+    if (_detailedRoom != null) {
+      return _buildDetailedOffer(_detailedRoom!);
+    }
 
-    return Scaffold(
-      backgroundColor: AppColors.white,
-      appBar: AppBar(
-        backgroundColor: AppColors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
+    return Column(
+      children: [
+        _buildSubHeader(),
+        Expanded(
+          child: _isLoading
+              ? const Center(
+                  child: CircularProgressIndicator(color: AppColors.orange),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 100),
+                  itemCount: _rooms.length,
+                  itemBuilder: (context, index) =>
+                      _buildExperienceCard(_rooms[index]),
+                ),
         ),
-        title: Text(
-          widget.hotel.name,
-          style: GoogleFonts.poppins(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: Colors.black,
-          ),
-          overflow: TextOverflow.ellipsis,
+      ],
+    );
+  }
+
+  Widget _buildSubHeader() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.withValues(alpha: 0.1)),
         ),
-        centerTitle: true,
       ),
-      body: _isLoading
-          ? const Center(
-              child: CircularProgressIndicator(
-                color: Color(0xFF00B894),
-              ),
-            )
-          : Column(
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: widget.onBack,
+            child: const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              size: 20,
+              color: AppColors.darkText,
+            ),
+          ),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // SECTION DATES FLEXIBLES
-                        _buildSectionTitle('Votre séjour'),
-                        const SizedBox(height: 12),
+                Text(
+                  widget.hotel.name,
+                  style: GoogleFonts.montserrat(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  '${widget.city} · Experiences disponibles',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 11,
+                    color: AppColors.grayText,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildExperienceCard(RoomModel room) {
+    return GestureDetector(
+      onTap: () => setState(() => _detailedRoom = room),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 25),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(25),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          children: [
+            Image.network(
+              room.image ??
+                  'https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800',
+              height: 200,
+              width: double.infinity,
+              fit: BoxFit.cover,
+            ),
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          room.roomType,
+                          style: GoogleFonts.montserrat(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '${room.price.round()} FCFA',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 15),
+                  Row(
+                    children: [
+                      Text(
+                        'CLIQUER POUR LES DETAILS',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                          color: AppColors.gradientBlue,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const Spacer(),
+                      const Icon(
+                        Icons.add_circle_outline_rounded,
+                        color: AppColors.orange,
+                        size: 24,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailedOffer(RoomModel room) {
+    return Column(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+          color: Colors.white,
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: () => setState(() => _detailedRoom = null),
+                child: const Icon(Icons.close_rounded, size: 24),
+              ),
+              const SizedBox(width: 15),
+              Text(
+                'Details de l\'offre',
+                style: GoogleFonts.montserrat(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.only(bottom: 100),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onTap: () => _showPanoramaDialog(room),
+                  child: Image.network(
+                    room.image ??
+                        'https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800',
+                    height: 280,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(25),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        room.roomType,
+                        style: GoogleFonts.montserrat(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        '${room.price.round()} FCFA',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.orange,
+                        ),
+                      ),
+                      const SizedBox(height: 25),
+                      if (room.virtualTourUrl != null || room.image != null) ...[
                         InkWell(
-                          onTap: _selectDateRange,
+                          onTap: () => _showPanoramaDialog(room),
+                          borderRadius: BorderRadius.circular(14),
                           child: Container(
-                            padding: const EdgeInsets.all(16),
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 14,
+                            ),
                             decoration: BoxDecoration(
                               color: AppColors.lightGray,
-                              borderRadius: BorderRadius.circular(15),
+                              borderRadius: BorderRadius.circular(14),
                               border: Border.all(
-                                  color:
-                                      AppColors.gradientBlue.withValues(alpha: 0.3)),
+                                color: AppColors.gradientBlue.withValues(
+                                  alpha: 0.2,
+                                ),
+                              ),
                             ),
                             child: Row(
                               children: [
-                                const Icon(Icons.calendar_today,
-                                    color: AppColors.gradientBlue),
-                                const SizedBox(width: 15),
+                                const Icon(
+                                  Icons.threed_rotation,
+                                  color: AppColors.gradientBlue,
+                                ),
+                                const SizedBox(width: 10),
                                 Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        'Du ${_checkIn.day}/${_checkIn.month} au ${_checkOut.day}/${_checkOut.month}',
-                                        style: GoogleFonts.poppins(
-                                            fontWeight: FontWeight.bold,
-                                            fontSize: 14),
-                                      ),
-                                      Text(
-                                        '$displayNights nuit(s) sélectionnée(s)',
-                                        style: GoogleFonts.poppins(
-                                            fontSize: 12,
-                                            color: AppColors.grayText),
-                                      ),
-                                    ],
+                                  child: Text(
+                                    'Explorer la chambre en 360',
+                                    style: GoogleFonts.montserrat(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.darkText,
+                                    ),
                                   ),
                                 ),
-                                const Icon(Icons.edit,
-                                    size: 18, color: AppColors.grayText),
                               ],
                             ),
                           ),
                         ),
-                        const SizedBox(height: 30),
-
-                        // CHAMBRES
-                        _buildSectionTitle(sectionTitle),
-                        const SizedBox(height: 12),
-
-                        if (_rooms.isEmpty)
-                          Center(
-                            child: Text(
-                              emptyLabel,
-                              style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          )
-                        else
-                          ..._rooms
-                              .map((room) => _buildRoomCard(room, displayNights, unitLabel, tourLabel)),
+                        const SizedBox(height: 18),
                       ],
-                    ),
-                  ),
-                ),
-                // FOOTER AVEC TOTAL ET BUTTON
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    border: Border(
-                      top: BorderSide(color: Colors.grey[200]!),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'Total',
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              color: Colors.grey[600],
-                            ),
-                          ),
-                          Text(
-                            '${_totalPrice.toStringAsFixed(0)} FCFA',
-                            style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: const Color(0xFF00B894),
-                            ),
-                          ),
-                        ],
+                      _detailRow(Icons.people_outline, 'Capacite premium'),
+                      _detailRow(
+                        Icons.verified_user_outlined,
+                        'Service de conciergerie inclus',
                       ),
-                      SizedBox(
-                        width: 200,
-                        child: ElevatedButton(
-                          onPressed: _proceedToBooking,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00B894),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: Text(
-                            'Continuer',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
+                      _detailRow(
+                        Icons.check_circle_outline_rounded,
+                        'Equipements de standing',
+                      ),
+                      const SizedBox(height: 30),
+                      Text(
+                        'A propos de cette offre',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Vivez un moment d\'exception dans cet etablissement de prestige. '
+                        'Chaque detail a ete soigneusement pense pour garantir votre confort '
+                        'et une experience memorable a ${widget.city}.',
+                        style: GoogleFonts.montserrat(
+                          fontSize: 14,
+                          color: AppColors.grayText,
+                          height: 1.6,
+                        ),
+                      ),
+                      const SizedBox(height: 40),
+                      _bookingButton(room),
                     ],
                   ),
                 ),
               ],
             ),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildSectionTitle(String title) {
-    return Text(
-      title,
-      style: GoogleFonts.poppins(
-        fontSize: 18,
-        fontWeight: FontWeight.w800,
-        color: Colors.black,
-      ),
-    );
-  }
-
-  Widget _buildRoomCard(Room room, int nights, String unitLabel, String tourLabel) {
-    final quantity = _selectedRooms[room.id] ?? 0;
-    final totalForThisRoom = room.price * quantity * nights;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _detailRow(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
         children: [
-          // PHOTO DE LA CHAMBRE
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              height: 150,
-              width: double.infinity,
-              color: Colors.grey[200],
-              child: const Icon(Icons.hotel, size: 50, color: Colors.grey),
+          Icon(icon, size: 20, color: AppColors.gradientBlue),
+          const SizedBox(width: 12),
+          Text(
+            text,
+            style: GoogleFonts.montserrat(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        ],
+      ),
+    );
+  }
+
+  Widget _bookingButton(RoomModel room) {
+    return InkWell(
+      onTap: () {
+        if (context.read<AuthService>().isAuthenticated) {
+          CartModel.add(
+            CartItem(
+              id: 'hotel-selection:${room.id}',
+              type: 'hotel',
+              serviceType: 'chambre_hotel',
+              name: widget.hotel.name,
+              subtitle: room.roomType,
+              priceDisplay: CartModel.formatCurrency(room.price.round()),
+              priceValue: room.price.round(),
+              color: AppColors.gradientBlue,
+              icon: Icons.hotel,
+              partnerId: room.partnerId ?? widget.hotel.partnerId,
+              prestationId: room.prestationId,
+              partnerName: widget.hotel.name,
+              partnerType: 'hotel',
+              partnerCity: widget.hotel.city,
+              partnerAddress: widget.hotel.address,
+              partnerLatitude: widget.hotel.latitude,
+              partnerLongitude: widget.hotel.longitude,
+              metadata: <String, dynamic>{
+                'roomId': room.id,
+                'roomType': room.roomType,
+                'roomCapacity': room.capacity,
+                'video360Url': room.virtualTourUrl,
+              },
+            ),
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Offre ajoutee a votre pack !')),
+          );
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const LoginScreen()),
+          );
+        }
+      },
+      child: Container(
+        width: double.infinity,
+        height: 56,
+        decoration: BoxDecoration(
+          color: AppColors.orange,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.orange.withValues(alpha: 0.3),
+              blurRadius: 15,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            'AJOUTER AU PACK',
+            style: GoogleFonts.montserrat(
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              letterSpacing: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showPanoramaDialog(RoomModel room) async {
+    final panoramaUrl = room.virtualTourUrl ?? room.image;
+    if (panoramaUrl == null || panoramaUrl.isEmpty) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: SizedBox(
+          height: 360,
+          child: Stack(
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      room.roomType,
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Panorama(
+                  child: Image.network(
+                    panoramaUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: const Color(0xFF101828),
+                      child: const Center(
+                        child: Icon(
+                          Icons.panorama_horizontal,
+                          color: Colors.white54,
+                          size: 48,
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Capacité : ${room.capacity} personne${room.capacity > 1 ? 's' : ''}',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: Colors.grey[600],
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 14,
+                left: 14,
+                right: 14,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Vue 360° • ${room.roomType}',
+                        style: GoogleFonts.montserrat(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(),
+                      icon: const Icon(Icons.close, color: Colors.white70),
                     ),
                   ],
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '${room.price.toStringAsFixed(0)} FCFA',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF00B894),
-                    ),
-                  ),
-                  Text(
-                    'par $unitLabel',
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      color: Colors.grey[500],
-                    ),
-                  ),
-                ],
-              ),
             ],
           ),
-          const SizedBox(height: 12),
-
-          // AMENITIES
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: room.amenities
-                .map(
-                  (amenity) => Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.grey[100],
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      amenity,
-                      style: GoogleFonts.poppins(
-                        fontSize: 10,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 12),
-
-           // VISITE VIRTUELLE (NOUVEAUTÉ)
-           if (room.virtualTourUrl != null)
-             Padding(
-               padding: const EdgeInsets.only(bottom: 12),
-               child: InkWell(
-                 onTap: () {
-                   // Ouvre une boîte de dialogue dédiée à la visite 360°
-                   showDialog(
-                     context: context,
-                     builder: (_) => Dialog(
-                       backgroundColor: Colors.black,
-                       child: Padding(
-                         padding: const EdgeInsets.all(16),
-                         child: Column(
-                           mainAxisSize: MainAxisSize.min,
-                           children: [
-                             const Icon(Icons.threed_rotation, size: 48, color: Colors.blue),
-                             const SizedBox(height: 16),
-                             Text(
-                               'Visite 360°',
-                               style: GoogleFonts.montserrat(
-                                 fontSize: 20,
-                                 fontWeight: FontWeight.w900,
-                                 color: Colors.white,
-                               ),
-                             ),
-                             const SizedBox(height: 16),
-                             Text(
-                               'Cette fonctionnalité sera bientôt disponible avec une visite immersive à 360°.\\n'
-                               'Pour l\'instant, voici un aperçu de la chambre.',
-                               textAlign: TextAlign.center,
-                               style: GoogleFonts.montserrat(
-                                 color: Colors.white70,
-                               ),
-                             ),
-                             const SizedBox(height: 24),
-                             GestureDetector(
-                               onTap: () => Navigator.pop(context),
-                               child: Container(
-                                 width: double.infinity,
-                                 padding: const EdgeInsets.symmetric(vertical: 12),
-                                 decoration: BoxDecoration(
-                                   color: AppColors.gradientBlue,
-                                   borderRadius: BorderRadius.circular(12),
-                                 ),
-                                 child: Text(
-                                   'Fermer',
-                                   textAlign: TextAlign.center,
-                                   style: GoogleFonts.montserrat(
-                                     color: Colors.white,
-                                     fontWeight: FontWeight.w800,
-                                   ),
-                                 ),
-                               ),
-                             ),
-                           ],
-                         ),
-                       ),
-                     ),
-                   );
-                 },
-                 child: Row(
-                   children: [
-                     const Icon(Icons.threed_rotation, color: Color(0xFF1E90FF), size: 18),
-                     const SizedBox(width: 8),
-                     Text(
-                       tourLabel,
-                       style: GoogleFonts.poppins(fontSize: 11, fontWeight: FontWeight.bold, color: const Color(0xFF1E90FF)),
-                     ),
-                   ],
-                 ),
-               ),
-             ),
-
-          // QUANTITY SELECTOR
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Quantité: $quantity',
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black87,
-                ),
-              ),
-              Row(
-                children: [
-                  IconButton(
-                    onPressed: quantity > 0
-                        ? () => _toggleRoom(room.id, quantity - 1)
-                        : null,
-                    icon: const Icon(Icons.remove_circle),
-                    color: const Color(0xFF00B894),
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
-                    padding: EdgeInsets.zero,
-                    iconSize: 22,
-                  ),
-                  IconButton(
-                    onPressed: () => _toggleRoom(room.id, quantity + 1),
-                    icon: const Icon(Icons.add_circle),
-                    color: const Color(0xFF00B894),
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
-                    padding: EdgeInsets.zero,
-                    iconSize: 22,
-                  ),
-                ],
-              ),
-            ],
-          ),
-
-          if (quantity > 0) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF00B894).withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                'Total: ${totalForThisRoom.toStringAsFixed(0)} FCFA ($quantity x $nights nuit${nights > 1 ? 's' : ''})',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: const Color(0xFF00B894),
-                ),
-              ),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }

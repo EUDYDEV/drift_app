@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../services/auth_service.dart';
+import '../../theme/app_colors.dart';
 import 'register_screen.dart';
 import 'forgot_password_screen.dart';
 
@@ -33,7 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final authService = context.read<AuthService>();
+      final authService = Provider.of<AuthService>(context, listen: false);
       final success = await authService.login(
         email: _emailController.text,
         password: _passwordController.text,
@@ -67,30 +68,35 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        iconTheme: const IconThemeData(color: AppColors.darkText),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new),
+          onPressed: () => Navigator.maybePop(context),
+        ),
+      ),
       body: SingleChildScrollView(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Column(
             children: [
-              SizedBox(height: MediaQuery.of(context).padding.top + 32),
+              const SizedBox(height: 24),
               // Logo & Title
               Container(
-                width: 80,
-                height: 80,
+                width: 90,
+                height: 90,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF1E90FF), Color(0xFF00D4FF)],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
+                  gradient: AppColors.blueViolet,
+                  borderRadius: BorderRadius.circular(20),
                 ),
                 child: Center(
-                  child: Text(
-                    'DriFt',
-                    style: GoogleFonts.poppins(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
+                  child: Image.asset(
+                    'assets/images/logo.png',
+                    width: 48,
+                    height: 48,
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
@@ -100,7 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 style: GoogleFonts.poppins(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
-                  color: const Color(0xFF1a1a1a),
+                  color: AppColors.darkText,
                 ),
               ),
               const SizedBox(height: 8),
@@ -224,7 +230,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     'Mot de passe oublié?',
                     style: GoogleFonts.poppins(
                       fontSize: 12,
-                      color: const Color(0xFF1E90FF),
+                      color: AppColors.gradientBlue,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -239,7 +245,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _login,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E90FF),
+                    backgroundColor: AppColors.gradientBlue,
                     disabledBackgroundColor: Colors.grey.shade300,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -299,7 +305,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       style: GoogleFonts.poppins(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: const Color(0xFF1E90FF),
+                        color: AppColors.gradientBlue,
                       ),
                     ),
                   ),

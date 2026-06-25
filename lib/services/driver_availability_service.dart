@@ -1,6 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+
 import '../models/driver_model.dart';
 import '../models/location_model.dart';
+import '../models/ride_model.dart';
+import '../models/ride_request_details.dart';
+import 'api_service.dart';
 
 class DriverAvailabilityService extends ChangeNotifier {
   List<Driver> _nearbyDrivers = [];
@@ -11,126 +17,154 @@ class DriverAvailabilityService extends ChangeNotifier {
   bool get isSearching => _isSearching;
   String? get error => _error;
 
-  /// Recherche les chauffeurs à proximité
-  ///
-  /// API endpoint (prod) : GET /api/v1/drivers/nearby?lat={lat}&lng={lng}&radius={radiusKm}
   Future<List<Driver>> findNearbyDrivers({
-    required Location location,
+    required AppLocation location,
     required double radiusKm,
   }) async {
+    final _ = location;
+    final __ = radiusKm;
     _isSearching = true;
     _error = null;
     notifyListeners();
 
     try {
-      // Replace with actual API call when backend is available.
-      // final response = await http.get(Uri.parse('https://api.driftapp.com/api/v1/drivers/nearby?lat=${location.latitude}&lng=${location.longitude}&radius=$radiusKm'));
-      // if (response.statusCode == 200) {
-      //   final List<dynamic> data = json.decode(response.body);
-      //   _nearbyDrivers = data.map((json) => Driver.fromJson(json)).toList();
-      // } else {
-      //   throw Exception('Failed to load nearby drivers');
-      // }
+      final response = await ApiService.authenticatedGet('/rides/nearby-drivers');
 
-      // For now, keep simulated data but remove the mock notice
-      // Dataset démo : 3 chauffeurs positionnés autour de la localisation utilisateur
-      // Les plaques et noms sont des valeurs statiques de démonstration
-      _nearbyDrivers = [
-        Driver(
-          id: '1',
-          name: 'Kofi Mensah',
-          phoneNumber: '+225 07 12 34 56',
-          rating: 4.8,
-          reviewCount: 1247,
-          vehicleType: 'comfort',
-          licensePlate: 'CI-1234-AB',
-          vehicleColor: 'Blanc',
-          status: DriverStatus.available,
-          currentLocation: Location(
-            latitude: location.latitude + 0.001,
-            longitude: location.longitude + 0.001,
-            address: 'À proximité',
-          ),
-          eta: 3,
-        ),
-        Driver(
-          id: '2',
-          name: 'Ama Boateng',
-          phoneNumber: '+225 07 98 76 54',
-          rating: 4.9,
-          reviewCount: 892,
-          vehicleType: 'premium',
-          licensePlate: 'CI-5678-CD',
-          vehicleColor: 'Noir',
-          status: DriverStatus.available,
-          currentLocation: Location(
-            latitude: location.latitude - 0.002,
-            longitude: location.longitude + 0.002,
-            address: 'À proximité',
-          ),
-          eta: 5,
-        ),
-        Driver(
-          id: '3',
-          name: 'Yusuf Ibrahim',
-          phoneNumber: '+225 07 55 44 33',
-          rating: 4.7,
-          reviewCount: 654,
-          vehicleType: 'economy',
-          licensePlate: 'CI-9012-EF',
-          vehicleColor: 'Gris',
-          status: DriverStatus.available,
-          currentLocation: Location(
-            latitude: location.latitude + 0.003,
-            longitude: location.longitude - 0.001,
-            address: 'À proximité',
-          ),
-          eta: 4,
-        ),
-      ];
+      if (response.statusCode != 200) {
+        throw Exception(_extractError(
+          response.body,
+          fallback: 'Impossible de recuperer les chauffeurs disponibles.',
+        ));
+      }
 
-      _error = null;
-      notifyListeners();
+      final decoded = jsonDecode(response.body);
+      if (decoded is! List) {
+        throw const FormatException('La reponse des chauffeurs est invalide.');
+      }
+
+      _nearbyDrivers = decoded
+          .whereType<Map<String, dynamic>>()
+          .map(Driver.fromJson)
+          .toList();
+
       return _nearbyDrivers;
     } catch (e) {
+      _error = e.toString();
+      rethrow;
+    } finally {
       _isSearching = false;
-      _error = e.toString();
       notifyListeners();
-      return [];
     }
   }
 
-  /// Accepte un trajet avec un chauffeur spécifique
-  ///
-  /// API endpoint (prod) : POST /api/v1/rides/accept?driverId={driverId}
-  /// Retourne true si le chauffeur accepte la course.
-  Future<bool> acceptRideWithDriver(String driverId) async {
-    try {
-      // Appel API attendu : POST /api/v1/rides/accept?driverId={driverId}
-      await Future.delayed(const Duration(milliseconds: 400));
-      _nearbyDrivers.firstWhere(
-        (d) => d.id == driverId,
-        orElse: () => throw Exception('Driver not found'),
-      );
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      notifyListeners();
-      return false;
+  Future<Ride> acceptRideWithDriver({
+    required Driver driver,
+    required RideRequestDetails request,
+  }) async {
+    final response = await ApiService.authenticatedPost(
+      '/rides',
+      request.toJson(driverId: driver.id),
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw StateError('Session utilisateur introuvable.');
     }
+
+    if (response.statusCode != 201) {
+      throw Exception(_extractError(
+        response.body,
+        fallback: 'La course n\'a pas pu etre creee.',
+      ));
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('La reponse de creation de course est invalide.');
+    }
+
+    return Ride.fromJson(decoded);
   }
 
-  /// Annule un trajet
-  ///
-  /// API endpoint (prod) : DELETE /api/v1/rides/{rideId}
-  Future<bool> cancelRide(String rideId) async {
-    try {
-      await Future.delayed(const Duration(milliseconds: 300));
-      return true;
-    } catch (e) {
-      _error = e.toString();
-      notifyListeners();
-      return false;
+  Future<Ride> getRideById(String rideId) async {
+    final response = await ApiService.authenticatedGet('/rides/$rideId');
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw StateError('Session utilisateur introuvable.');
     }
+    if (response.statusCode != 200) {
+      throw Exception(_extractError(
+        response.body,
+        fallback: 'Impossible de recuperer cette course.',
+      ));
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('La reponse de course est invalide.');
+    }
+
+    return Ride.fromJson(decoded);
+  }
+
+  Future<Ride> cancelRide(String rideId) async {
+    final response = await ApiService.authenticatedPost(
+      '/rides/$rideId/cancel',
+      const <String, dynamic>{},
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw StateError('Session utilisateur introuvable.');
+    }
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractError(
+        response.body,
+        fallback: 'Impossible d\'annuler la course.',
+      ));
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('La reponse d\'annulation est invalide.');
+    }
+
+    return Ride.fromJson(decoded);
+  }
+
+  Future<RideSettlementResult> completeRide(String rideId) async {
+    final response = await ApiService.authenticatedPost(
+      '/rides/$rideId/complete',
+      const <String, dynamic>{},
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw StateError('Session utilisateur introuvable.');
+    }
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractError(
+        response.body,
+        fallback: 'Impossible de cloturer la course.',
+      ));
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('La reponse de cloture est invalide.');
+    }
+
+    return RideSettlementResult.fromJson(decoded);
+  }
+
+  String _extractError(String body, {required String fallback}) {
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is Map<String, dynamic>) {
+        final error = decoded['error'];
+        if (error is String && error.isNotEmpty) {
+          return error;
+        }
+      }
+    } catch (_) {
+      // Ignore body parsing and fall back to the provided message.
+    }
+
+    return fallback;
   }
 }

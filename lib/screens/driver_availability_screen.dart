@@ -1,14 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+
+import '../controllers/ride_state_controller.dart';
+import '../models/driver_model.dart';
 import '../models/location_model.dart';
 import '../models/ride_option_model.dart';
-import '../models/driver_model.dart';
+import '../models/ride_request_details.dart';
 import '../services/driver_availability_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/ride_request_qualification_dialog.dart';
 
 class DriverAvailabilityScreen extends StatefulWidget {
-  final Location currentLocation;
-  final Location destination;
+  final AppLocation currentLocation;
+  final AppLocation destination;
   final RideOption selectedOption;
 
   const DriverAvailabilityScreen({
@@ -27,6 +32,7 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
   late DriverAvailabilityService _driverService;
   List<Driver> _nearbyDrivers = [];
   bool _isLoading = true;
+  bool _isSubmitting = false;
   Driver? _selectedDriver;
 
   @override
@@ -62,31 +68,112 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
     }
   }
 
-  void _confirmRide() {
+  Future<void> _confirmRide() async {
     if (_selectedDriver == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Veuillez sélectionner un chauffeur')),
+        const SnackBar(content: Text('Veuillez selectionner un chauffeur')),
       );
       return;
     }
 
-    // Simule l'acceptation du trajet
-    showDialog(
+    final request = await showRideQualificationDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmation'),
-        content: Text(
-          'Trajet confirmé avec ${_selectedDriver!.name}!\n'
-          'Arrivée estimée: ${_selectedDriver!.eta} minutes',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
+      currentLocation: widget.currentLocation,
+      destination: widget.destination,
+      selectedOption: widget.selectedOption,
     );
+
+    if (!mounted || request == null) return;
+
+    final resolvedDriver = _resolveDriverForRequest(request);
+    if (resolvedDriver == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            request.requiresMiniCar
+                ? 'Aucun mini-car disponible pour ce groupe.'
+                : 'Aucun chauffeur compatible avec ${request.passengerCount} passager(s).',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final rideController = context.read<RideStateController>();
+      final ride = await rideController.createRideSession(
+        driver: resolvedDriver,
+        request: request,
+      );
+
+      if (!mounted) return;
+      setState(() => _selectedDriver = resolvedDriver);
+
+      final shouldCancel = await showRideCreatedDialog(
+        context: context,
+        ride: ride,
+      );
+
+      if (shouldCancel && mounted) {
+        final cancelled = await rideController.cancelActiveRide();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              cancelled
+                  ? 'La course a ete annulee.'
+                  : 'Impossible d\'annuler la course.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erreur: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
+  Driver? _resolveDriverForRequest(RideRequestDetails request) {
+    final compatibleDrivers = _nearbyDrivers
+        .where((driver) => _supportsRequest(driver, request))
+        .toList(growable: false);
+
+    if (compatibleDrivers.isEmpty) {
+      return null;
+    }
+
+    final selectedDriver = _selectedDriver;
+    if (selectedDriver != null &&
+        compatibleDrivers.any((driver) => driver.id == selectedDriver.id)) {
+      return selectedDriver;
+    }
+
+    return compatibleDrivers.first;
+  }
+
+  bool _isMiniCar(Driver driver) {
+    return driver.vehicleType.trim().toLowerCase() == 'mini-car';
+  }
+
+  bool _supportsRequest(Driver driver, RideRequestDetails request) {
+    final hasEnoughCapacity = driver.capacity >= request.passengerCount;
+    if (!hasEnoughCapacity) {
+      return false;
+    }
+
+    if (request.requiresMiniCar) {
+      return _isMiniCar(driver);
+    }
+
+    return true;
   }
 
   @override
@@ -127,8 +214,11 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.directions_car,
-                          size: 64, color: Colors.grey[300]),
+                      Icon(
+                        Icons.directions_car,
+                        size: 64,
+                        color: Colors.grey[300],
+                      ),
                       const SizedBox(height: 16),
                       Text(
                         'Aucun chauffeur disponible',
@@ -140,7 +230,7 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Veuillez réessayer dans quelques instants',
+                        'Veuillez reessayer dans quelques instants',
                         style: GoogleFonts.poppins(
                           fontSize: 12,
                           color: Colors.grey[500],
@@ -154,13 +244,10 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // RÉSUMÉ DE LA COMMANDE
                       _buildOrderSummary(),
                       const SizedBox(height: 24),
-
-                      // CHAUFFEURS DISPONIBLES
                       Text(
-                        'Chauffeurs à proximité (${_nearbyDrivers.length})',
+                        'Chauffeurs a proximite (${_nearbyDrivers.length})',
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -168,7 +255,6 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-
                       ..._nearbyDrivers.asMap().entries.map((entry) {
                         final driver = entry.value;
                         final isSelected = _selectedDriver?.id == driver.id;
@@ -187,13 +273,13 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                               ),
                               borderRadius: BorderRadius.circular(12),
                               color: isSelected
-                                  ? const Color(0xFF1E90FF).withValues(alpha:0.05)
+                                  ? const Color(0xFF1E90FF)
+                                      .withValues(alpha: 0.05)
                                   : Colors.white,
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Header: Nom, Rating, ETA
                                 Row(
                                   mainAxisAlignment:
                                       MainAxisAlignment.spaceBetween,
@@ -214,9 +300,11 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                                           const SizedBox(height: 4),
                                           Row(
                                             children: [
-                                              Icon(Icons.star,
-                                                  size: 14,
-                                                  color: Colors.amber[600]),
+                                              Icon(
+                                                Icons.star,
+                                                size: 14,
+                                                color: Colors.amber[600],
+                                              ),
                                               const SizedBox(width: 4),
                                               Text(
                                                 '${driver.rating} (${driver.reviewCount} avis)',
@@ -230,24 +318,27 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                                         ],
                                       ),
                                     ),
-                                    // ETA BADGE
                                     Container(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 12,
                                         vertical: 6,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: Colors.green.withValues(alpha:0.15),
+                                        color: Colors.green
+                                            .withValues(alpha: 0.15),
                                         borderRadius: BorderRadius.circular(20),
                                         border: Border.all(
-                                          color: Colors.green.withValues(alpha:0.3),
+                                          color: Colors.green
+                                              .withValues(alpha: 0.3),
                                         ),
                                       ),
                                       child: Row(
                                         children: [
-                                          Icon(Icons.schedule,
-                                              size: 14,
-                                              color: Colors.green[600]),
+                                          Icon(
+                                            Icons.schedule,
+                                            size: 14,
+                                            color: Colors.green[600],
+                                          ),
                                           const SizedBox(width: 4),
                                           Text(
                                             '${driver.eta} min',
@@ -263,12 +354,13 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 12),
-
-                                // VÉHICULE
                                 Row(
                                   children: [
-                                    Icon(Icons.directions_car,
-                                        size: 18, color: Colors.grey[600]),
+                                    Icon(
+                                      Icons.directions_car,
+                                      size: 18,
+                                      color: Colors.grey[600],
+                                    ),
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Text(
@@ -282,12 +374,13 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                                   ],
                                 ),
                                 const SizedBox(height: 8),
-
-                                // NUMÉRO TÉL
                                 Row(
                                   children: [
-                                    Icon(Icons.phone,
-                                        size: 18, color: Colors.grey[600]),
+                                    Icon(
+                                      Icons.phone,
+                                      size: 18,
+                                      color: Colors.grey[600],
+                                    ),
                                     const SizedBox(width: 8),
                                     Text(
                                       driver.phoneNumber,
@@ -298,28 +391,29 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                                     ),
                                   ],
                                 ),
-
-                                // Checkbox
                                 if (isSelected) ...[
                                   const SizedBox(height: 12),
                                   Container(
                                     width: double.infinity,
-                                    padding:
-                                        const EdgeInsets.symmetric(vertical: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8,
+                                    ),
                                     decoration: BoxDecoration(
                                       color: const Color(0xFF1E90FF)
-                                          .withValues(alpha:0.1),
+                                          .withValues(alpha: 0.1),
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                     child: Row(
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
                                       children: [
-                                        const Icon(Icons.check_circle,
-                                            color: Color(0xFF1E90FF)),
+                                        const Icon(
+                                          Icons.check_circle,
+                                          color: Color(0xFF1E90FF),
+                                        ),
                                         const SizedBox(width: 8),
                                         Text(
-                                          'Sélectionné',
+                                          'Selectionne',
                                           style: GoogleFonts.poppins(
                                             fontSize: 12,
                                             fontWeight: FontWeight.w600,
@@ -335,14 +429,11 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                           ),
                         );
                       }),
-
                       const SizedBox(height: 24),
-
-                      // BUTTON
                       SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _confirmRide,
+                          onPressed: _isSubmitting ? null : _confirmRide,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF1E90FF),
                             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -350,14 +441,23 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          child: Text(
-                            'Confirmer le trajet',
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
+                          child: _isSubmitting
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.2,
+                                  ),
+                                )
+                              : Text(
+                                  'Confirmer le trajet',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
                         ),
                       ),
                     ],
@@ -378,7 +478,7 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Résumé de votre trajet',
+            'Resume de votre trajet',
             style: GoogleFonts.poppins(
               fontSize: 14,
               fontWeight: FontWeight.bold,

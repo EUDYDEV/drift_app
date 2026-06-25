@@ -1,216 +1,276 @@
-import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import '../models/user_model.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 
 class AuthService extends ChangeNotifier {
-  User? _currentUser;
-  late SharedPreferences _prefs;
-  bool _isInitialized = false;
+  AuthService._internal();
 
-  User? get currentUser => _currentUser;
-  bool get isLoggedIn => _currentUser != null;
-  bool get isInitialized => _isInitialized;
+  static final AuthService _instance = AuthService._internal();
+  factory AuthService() => _instance;
 
-  // Initialize service
+  static const FlutterSecureStorage _storage = FlutterSecureStorage();
+  static const String _tokenKey = 'drift_auth_token';
+
+  static String get _baseUrl => ApiConfig.baseUrl;
+
+  String? _token;
+  String _userName = '';
+  String _userEmail = '';
+  bool _isVip = false;
+  bool _initialized = false;
+
+  bool get isAuthenticated => _token != null;
+  String get userName => _userName;
+  String get userEmail => _userEmail;
+  bool get isVip => isAuthenticated && _isVip;
+
+  static Future<String?> readToken() async {
+    return _storage.read(key: _tokenKey);
+  }
+
   Future<void> initialize() async {
-    _prefs = await SharedPreferences.getInstance();
-    await _loadStoredUser();
-    _isInitialized = true;
+    if (_initialized) return;
+    _initialized = true;
+
+    _token = await readToken();
+    if (_token != null) {
+      await _refreshProfile(clearTokenOnUnauthorized: true);
+    }
+
     notifyListeners();
   }
 
-  // Load stored user from preferences
-  Future<void> _loadStoredUser() async {
-    final userJson = _prefs.getString('current_user');
-    if (userJson != null) {
-      _currentUser = User.fromJson(jsonDecode(userJson));
-    }
+  Future<String?> getToken() async {
+    _token ??= await readToken();
+    return _token;
   }
 
-  // Login (mock)
-  Future<bool> login({
-    required String email,
-    required String password,
-  }) async {
-    try {
-      // Simulate API delay
-      await Future.delayed(const Duration(milliseconds: 1500));
-
-      // Simple validation
-      if (email.isEmpty || password.isEmpty) {
-        return false;
-      }
-
-      // Mock user (in real app, call backend)
-      final user = User(
-        id: 'user_${DateTime.now().millisecondsSinceEpoch}',
-        email: email,
-        phone: '+225 07 00 00 00 00',
-        fullName: email.split('@')[0],
-        createdAt: DateTime.now(),
-        savedAddresses: [],
-      );
-
-      _currentUser = user;
-      await _prefs.setString('current_user', jsonEncode(user.toJson()));
-      notifyListeners();
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // Register (mock)
   Future<bool> register({
     required String fullName,
     required String email,
     required String phone,
     required String password,
   }) async {
+    final _ = phone;
+    final url = Uri.parse('$_baseUrl/auth/register');
     try {
-      // Simulate API delay
-      await Future.delayed(const Duration(milliseconds: 1500));
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'full_name': fullName,
+          'email': email,
+          'password': password,
+        }),
+      );
 
-      // Simple validation
-      if (fullName.isEmpty || email.isEmpty || phone.isEmpty || password.isEmpty) {
+      if (response.statusCode != 201) {
+        debugPrint('Echec inscription: ${response.statusCode} ${response.body}');
         return false;
       }
 
-      // Mock user creation
-      final user = User(
-        id: 'user_${DateTime.now().millisecondsSinceEpoch}',
-        email: email,
-        phone: phone,
-        fullName: fullName,
-        createdAt: DateTime.now(),
-        savedAddresses: [],
+      final data = _decodeJson(response.body);
+      await _persistSession(
+        token: data['token'] as String?,
+        userJson: data['user'] as Map<String, dynamic>?,
+        fallbackName: fullName,
+        fallbackEmail: email,
       );
-
-      _currentUser = user;
-      await _prefs.setString('current_user', jsonEncode(user.toJson()));
-      notifyListeners();
       return true;
     } catch (e) {
+      debugPrint('Erreur reseau inscription: $e');
       return false;
     }
   }
 
-  // Logout
+  Future<bool> login({
+    required String email,
+    required String password,
+  }) async {
+    final url = Uri.parse('$_baseUrl/auth/login');
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email, 'password': password}),
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint('Echec connexion: ${response.statusCode} ${response.body}');
+        return false;
+      }
+
+      final data = _decodeJson(response.body);
+      await _persistSession(
+        token: data['token'] as String?,
+        userJson: data['user'] as Map<String, dynamic>?,
+        fallbackName: 'Utilisateur',
+        fallbackEmail: email,
+      );
+      return true;
+    } catch (e) {
+      debugPrint('Erreur reseau connexion: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, dynamic>?> getProfile() async {
+    final token = await getToken();
+    if (token == null) return null;
+
+    await _refreshProfile(clearTokenOnUnauthorized: true);
+    if (_token == null) return null;
+
+    return {
+      'email': _userEmail,
+      'fullName': _userName,
+      'isVip': _isVip,
+    };
+  }
+
   Future<void> logout() async {
-    _currentUser = null;
-    await _prefs.remove('current_user');
+    await _clearSession();
+  }
+
+  Future<bool> requestPasswordReset(String email) async {
+    final url = Uri.parse('$_baseUrl/auth/forgot-password');
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'email': email}),
+      );
+
+      if (response.statusCode == 200 ||
+          response.statusCode == 201 ||
+          response.statusCode == 202 ||
+          response.statusCode == 204) {
+        return true;
+      }
+
+      debugPrint(
+        'Reset password failed: ${response.statusCode} ${response.body}',
+      );
+      return false;
+    } catch (e) {
+      debugPrint('Erreur reset password: $e');
+      return false;
+    }
+  }
+
+  Future<void> _persistSession({
+    required String? token,
+    required Map<String, dynamic>? userJson,
+    required String fallbackName,
+    required String fallbackEmail,
+  }) async {
+    if (token == null || token.isEmpty) {
+      throw StateError('Backend auth response is missing token');
+    }
+
+    _token = token;
+    await _storage.write(key: _tokenKey, value: token);
+    _applyUser(
+      userJson,
+      fallbackName: fallbackName,
+      fallbackEmail: fallbackEmail,
+    );
     notifyListeners();
   }
 
-  // Update profile
-  Future<bool> updateProfile({
-    String? fullName,
-    String? phone,
-    String? profileImage,
+  Future<bool> _refreshProfile({
+    required bool clearTokenOnUnauthorized,
   }) async {
-    if (_currentUser == null) return false;
+    final token = _token ?? await readToken();
+    if (token == null) return false;
 
+    final url = Uri.parse('$_baseUrl/auth/me');
     try {
-      // Simulate API delay
-      await Future.delayed(const Duration(milliseconds: 1000));
-
-      _currentUser = _currentUser!.copyWith(
-        fullName: fullName ?? _currentUser!.fullName,
-        phone: phone ?? _currentUser!.phone,
-        profileImage: profileImage ?? _currentUser!.profileImage,
+      final response = await http.get(
+        url,
+        headers: {'Authorization': 'Bearer $token'},
       );
 
-      await _prefs.setString('current_user', jsonEncode(_currentUser!.toJson()));
-      notifyListeners();
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // Add saved address
-  Future<bool> addSavedAddress(String address) async {
-    if (_currentUser == null) return false;
-
-    try {
-      final addresses = List<String>.from(_currentUser!.savedAddresses);
-      if (!addresses.contains(address)) {
-        addresses.add(address);
-        _currentUser = _currentUser!.copyWith(savedAddresses: addresses);
-        await _prefs.setString('current_user', jsonEncode(_currentUser!.toJson()));
-        notifyListeners();
+      if (response.statusCode == 200) {
+        final data = _decodeJson(response.body);
+        _token = token;
+        _applyUser(data);
+        return true;
       }
-      return true;
+
+      if (clearTokenOnUnauthorized &&
+          (response.statusCode == 401 || response.statusCode == 403)) {
+        await _clearSession(notify: false);
+      }
+
+      debugPrint(
+        'Profile fetch failed: ${response.statusCode} ${response.body}',
+      );
+      return false;
     } catch (e) {
+      debugPrint('Erreur recuperation profil: $e');
       return false;
     }
   }
 
-  // Remove saved address
-  Future<bool> removeSavedAddress(String address) async {
-    if (_currentUser == null) return false;
+  void _applyUser(
+    Map<String, dynamic>? userJson, {
+    String fallbackName = '',
+    String fallbackEmail = '',
+  }) {
+    final data = userJson ?? const <String, dynamic>{};
+    _userName = _stringValue(data, 'fullName', 'full_name') ?? fallbackName;
+    _userEmail = _stringValue(data, 'email') ?? fallbackEmail;
+    _isVip = _boolValue(data, 'isVip', 'is_vip');
+  }
 
-    try {
-      final addresses = List<String>.from(_currentUser!.savedAddresses);
-      addresses.remove(address);
-      _currentUser = _currentUser!.copyWith(savedAddresses: addresses);
-      await _prefs.setString('current_user', jsonEncode(_currentUser!.toJson()));
+  Future<void> _clearSession({bool notify = true}) async {
+    _token = null;
+    _userName = '';
+    _userEmail = '';
+    _isVip = false;
+    await _storage.delete(key: _tokenKey);
+    if (notify) {
       notifyListeners();
-      return true;
-    } catch (e) {
-      return false;
     }
   }
 
-  // Forgot password (mock)
-  Future<bool> requestPasswordReset(String email) async {
-    try {
-      // Simulate API delay
-      await Future.delayed(const Duration(milliseconds: 1000));
-      // In real app, send email with reset link
-      return true;
-    } catch (e) {
-      return false;
+  Map<String, dynamic> _decodeJson(String raw) {
+    final decoded = jsonDecode(raw);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
     }
+    throw const FormatException('Expected JSON object');
   }
 
-  // Reset password (mock)
-  Future<bool> resetPassword({
-    required String resetCode,
-    required String newPassword,
-  }) async {
-    try {
-      // Simulate API delay
-      await Future.delayed(const Duration(milliseconds: 1000));
-      // In real app, call backend with reset code
-      return true;
-    } catch (e) {
-      return false;
+  String? _stringValue(
+    Map<String, dynamic> data,
+    String key, [
+    String? alternateKey,
+  ]) {
+    final dynamic direct = data[key];
+    if (direct is String && direct.isNotEmpty) return direct;
+
+    if (alternateKey != null) {
+      final dynamic alternate = data[alternateKey];
+      if (alternate is String && alternate.isNotEmpty) return alternate;
     }
+
+    return null;
   }
 
-  // Verify phone (mock)
-  Future<bool> sendPhoneVerificationCode(String phone) async {
-    try {
-      // Simulate API delay
-      await Future.delayed(const Duration(milliseconds: 1000));
-      // In real app, send SMS
-      return true;
-    } catch (e) {
-      return false;
+  bool _boolValue(
+    Map<String, dynamic> data,
+    String key, [
+    String? alternateKey,
+  ]) {
+    final direct = data[key];
+    if (direct is bool) return direct;
+    if (alternateKey != null && data[alternateKey] is bool) {
+      return data[alternateKey] as bool;
     }
-  }
-
-  // Verify code (mock)
-  Future<bool> verifyPhoneCode(String code) async {
-    try {
-      // Simulate API delay
-      await Future.delayed(const Duration(milliseconds: 1000));
-      // In real app, validate code with backend
-      return code.length == 6; // Simple check
-    } catch (e) {
-      return false;
-    }
+    return false;
   }
 }
