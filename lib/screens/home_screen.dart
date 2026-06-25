@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
-import 'dart:convert';
-import 'dart:io';
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:geocoding/geocoding.dart' as geocoding;
 import '../controllers/home_journey_controller.dart';
@@ -104,32 +105,58 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _searchLocation(String query) async {
     setState(() => _isSearching = true);
-    final url = Uri.parse(
-        'https://photon.komoot.io/api/?q=${Uri.encodeComponent(query)}&lat=5.3484&lon=-4.0305&limit=5');
+    final url = Uri.https(
+      'photon.komoot.io',
+      '/api/',
+      <String, String>{
+        'q': query,
+        'lat': '5.3484',
+        'lon': '-4.0305',
+        'limit': '5',
+      },
+    );
     try {
-      final request = await HttpClient().getUrl(url);
-      final response = await request.close();
+      final response = await http.get(url, headers: const <String, String>{
+        'Accept': 'application/json',
+      }).timeout(const Duration(seconds: 12));
+
       if (response.statusCode == 200) {
-        final body = await response.transform(utf8.decoder).join();
-        final data = jsonDecode(body);
-        final List features = data['features'];
+        final data = jsonDecode(utf8.decode(response.bodyBytes));
+        final features = data is Map && data['features'] is List
+            ? data['features'] as List
+            : const <dynamic>[];
         if (mounted) {
           setState(() {
-            _suggestions = features.map((f) {
-              final props = f['properties'];
-              final coords = f['geometry']['coordinates'];
-              return {
-                'display':
-                    '${props['name'] ?? ''}, ${props['city'] ?? props['state'] ?? 'Abidjan'}',
-                'lat': coords[1],
-                'lon': coords[0],
-              };
-            }).toList();
+            _suggestions = features
+                .whereType<Map>()
+                .map((feature) {
+                  final properties = feature['properties'] is Map
+                      ? feature['properties'] as Map
+                      : const <dynamic, dynamic>{};
+                  final geometry = feature['geometry'] is Map
+                      ? feature['geometry'] as Map
+                      : const <dynamic, dynamic>{};
+                  final coordinates = geometry['coordinates'];
+                  if (coordinates is! List || coordinates.length < 2) {
+                    return null;
+                  }
+
+                  return <String, dynamic>{
+                    'display':
+                        '${properties['name'] ?? ''}, ${properties['city'] ?? properties['state'] ?? 'Abidjan'}',
+                    'lat': coordinates[1],
+                    'lon': coordinates[0],
+                  };
+                })
+                .whereType<Map<String, dynamic>>()
+                .toList(growable: false);
             _isSearching = false;
           });
         }
+      } else if (mounted) {
+        setState(() => _isSearching = false);
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) setState(() => _isSearching = false);
     }
   }
@@ -217,26 +244,59 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _fetchRoute(LatLng destination) async {
     if (_currentLocation == null) return;
-    final url = Uri.parse(
-        'https://router.project-osrm.org/route/v1/driving/${_currentLocation!.longitude},${_currentLocation!.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson');
+    final currentLocation = _currentLocation!;
+    final url = Uri.https(
+      'router.project-osrm.org',
+      '/route/v1/driving/'
+          '${currentLocation.longitude},${currentLocation.latitude};'
+          '${destination.longitude},${destination.latitude}',
+      const <String, String>{
+        'overview': 'full',
+        'geometries': 'geojson',
+      },
+    );
     try {
-      final request = await HttpClient().getUrl(url);
-      final response = await request.close();
-      final body = await response.transform(utf8.decoder).join();
-      final data = jsonDecode(body);
-      if (data['routes'] != null && data['routes'].isNotEmpty) {
-        final List coords = data['routes'][0]['geometry']['coordinates'];
+      final response = await http.get(url, headers: const <String, String>{
+        'Accept': 'application/json',
+      }).timeout(const Duration(seconds: 15));
+      if (response.statusCode != 200) {
+        throw StateError('OSRM response ${response.statusCode}');
+      }
+
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      if (data is Map &&
+          data['routes'] is List &&
+          (data['routes'] as List).isNotEmpty) {
+        final firstRoute = (data['routes'] as List).first;
+        final geometry = firstRoute is Map ? firstRoute['geometry'] : null;
+        final coords = geometry is Map ? geometry['coordinates'] : null;
+        if (coords is! List) {
+          throw const FormatException('OSRM coordinates missing');
+        }
+
         if (mounted) {
-          setState(() => _routePoints = coords
-              .map((c) => LatLng(c[1].toDouble(), c[0].toDouble()))
-              .toList());
+          setState(() {
+            _routePoints = coords
+                .whereType<List>()
+                .where((coordinate) => coordinate.length >= 2)
+                .map(
+                  (coordinate) => LatLng(
+                    (coordinate[1] as num).toDouble(),
+                    (coordinate[0] as num).toDouble(),
+                  ),
+                )
+                .toList(growable: false);
+          });
         }
       }
-    } catch (e) {
-      setState(() => _routePoints = [
-            LatLng(_currentLocation!.latitude, _currentLocation!.longitude),
-            destination
-          ]);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _routePoints = <LatLng>[
+          LatLng(currentLocation.latitude, currentLocation.longitude),
+          destination,
+        ];
+      });
     }
   }
 

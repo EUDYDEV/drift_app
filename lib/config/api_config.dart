@@ -1,12 +1,32 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 class ApiConfig {
+  static const String _productionBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://api.drift.ci',
+  );
+
+  static const String _localMobileBaseUrl = String.fromEnvironment(
+    'LOCAL_API_BASE_URL',
+    defaultValue: _productionBaseUrl,
+  );
+
   static String get baseUrl {
-    if (Platform.isAndroid) {
-      // Sur un appareil Android physique, l'émulateur n'est pas utilisé.
-      // Utiliser l'IP locale de la machine hôte pour accéder au backend Docker.
-      return 'http://192.168.200.19:8080';
+    const configuredUrl = kIsWeb ? _productionBaseUrl : _localMobileBaseUrl;
+    final uri = Uri.tryParse(configuredUrl.trim());
+
+    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+      throw StateError(
+        'API_BASE_URL doit contenir une URL absolue valide.',
+      );
     }
-    return 'http://localhost:8080';
+
+    if (kIsWeb && uri.scheme != 'https') {
+      throw StateError(
+        'API_BASE_URL doit utiliser HTTPS pour une application Web.',
+      );
+    }
+
+    return configuredUrl.trim().replaceFirst(RegExp(r'/+$'), '');
   }
 }
