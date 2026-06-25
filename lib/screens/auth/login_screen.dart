@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+
 import '../../services/auth_service.dart';
-import '../../theme/app_colors.dart';
-import 'register_screen.dart';
 import 'forgot_password_screen.dart';
+import 'register_screen.dart';
+import 'widgets/drift_auth_shell.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,307 +15,244 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  final _identifierController = TextEditingController();
   final _passwordController = TextEditingController();
+
   bool _obscurePassword = true;
   bool _isLoading = false;
   String? _errorMessage;
 
   @override
   void dispose() {
-    _emailController.dispose();
+    _identifierController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _login() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      final authService = Provider.of<AuthService>(context, listen: false);
-      final success = await authService.login(
-        email: _emailController.text,
-        password: _passwordController.text,
-      );
+      final success = await context.read<AuthService>().login(
+            email: _identifierController.text.trim(),
+            password: _passwordController.text,
+          );
+      if (!mounted) return;
 
-      if (mounted) {
-        if (success) {
-          Navigator.of(context).pushReplacementNamed('/home');
-        } else {
-          setState(() {
-            _errorMessage = 'Email ou mot de passe incorrect';
-          });
-        }
+      if (success) {
+        Navigator.of(context).pushNamedAndRemoveUntil('/home', (_) => false);
+      } else {
+        setState(() {
+          _errorMessage =
+              'Identifiant ou mot de passe incorrect. Veuillez réessayer.';
+        });
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Erreur: ${e.toString()}';
+          _errorMessage =
+              'La connexion est momentanément indisponible. Réessayez dans un instant.';
         });
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  void _openRegister() {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const RegisterScreen()),
+    );
+  }
+
+  void _showSocialUnavailable(String provider) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'La connexion avec $provider sera disponible prochainement.',
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        iconTheme: const IconThemeData(color: AppColors.darkText),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new),
-          onPressed: () => Navigator.maybePop(context),
-        ),
-      ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            children: [
-              const SizedBox(height: 24),
-              // Logo & Title
-              Container(
-                width: 90,
-                height: 90,
-                decoration: BoxDecoration(
-                  gradient: AppColors.blueViolet,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Center(
-                  child: Image.asset(
-                    'assets/images/logo.png',
-                    width: 48,
-                    height: 48,
-                    fit: BoxFit.contain,
-                  ),
+    return DriftAuthShell(
+      mode: DriftAuthMode.login,
+      title: 'Heureux de vous revoir',
+      subtitle:
+          'Accédez à vos trajets, expériences et réservations Drift en toute sécurité.',
+      onLoginSelected: () {},
+      onRegisterSelected: _openRegister,
+      child: Form(
+        key: _formKey,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (_errorMessage != null) ...[
+              _AuthErrorMessage(message: _errorMessage!),
+              const SizedBox(height: 16),
+            ],
+            DriftAuthField(
+              controller: _identifierController,
+              label: 'Identifiant',
+              hintText: 'Email ou Numéro de téléphone',
+              prefixIcon: adaptiveIdentifierIcon(_identifierController.text),
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              enabled: !_isLoading,
+              onChanged: (_) => setState(() {}),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Saisissez votre email ou votre numéro de téléphone.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 14),
+            DriftAuthField(
+              controller: _passwordController,
+              label: 'Mot de passe',
+              hintText: 'Votre mot de passe',
+              prefixIcon: Icons.lock_outline,
+              textInputAction: TextInputAction.done,
+              obscureText: _obscurePassword,
+              enabled: !_isLoading,
+              onFieldSubmitted: (_) => _login(),
+              suffixIcon: IconButton(
+                tooltip: _obscurePassword
+                    ? 'Afficher le mot de passe'
+                    : 'Masquer le mot de passe',
+                onPressed: _isLoading
+                    ? null
+                    : () => setState(
+                          () => _obscurePassword = !_obscurePassword,
+                        ),
+                icon: Icon(
+                  _obscurePassword
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  color: driftAuthMuted,
                 ),
               ),
-              const SizedBox(height: 32),
-              Text(
-                'Bienvenue sur DriFt',
-                style: GoogleFonts.poppins(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.darkText,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Voyagez avec style et sécurité',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              const SizedBox(height: 40),
-
-              // Error message
-              if (_errorMessage != null)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.red.shade200),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.error_outline, color: Colors.red.shade700),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          _errorMessage!,
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            color: Colors.red.shade700,
+              validator: (value) {
+                if (value == null || value.isEmpty) {
+                  return 'Saisissez votre mot de passe.';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _isLoading
+                    ? null
+                    : () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ForgotPasswordScreen(),
                           ),
+                        ),
+                style: TextButton.styleFrom(
+                  foregroundColor: driftAuthOrange,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                ),
+                child: Text(
+                  'Mot de passe oublié ?',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            DriftPrimaryButton(
+              label: 'Se connecter',
+              isLoading: _isLoading,
+              onPressed: _login,
+            ),
+            const SizedBox(height: 26),
+            DriftSocialAuthBlock(
+              onGoogle: () => _showSocialUnavailable('Google'),
+              onFacebook: () => _showSocialUnavailable('Facebook'),
+              onApple: () => _showSocialUnavailable('Apple'),
+            ),
+            const SizedBox(height: 28),
+            Center(
+              child: TextButton(
+                onPressed: _isLoading ? null : _openRegister,
+                style: TextButton.styleFrom(
+                  foregroundColor: driftAuthOrange,
+                ),
+                child: Text.rich(
+                  TextSpan(
+                    style: GoogleFonts.montserrat(
+                      fontSize: 12,
+                      color: driftAuthMuted,
+                    ),
+                    children: [
+                      const TextSpan(text: 'Vous découvrez Drift ? '),
+                      TextSpan(
+                        text: 'Créer un compte',
+                        style: GoogleFonts.montserrat(
+                          fontWeight: FontWeight.w800,
+                          color: driftAuthOrange,
                         ),
                       ),
                     ],
                   ),
                 ),
-              if (_errorMessage != null) const SizedBox(height: 16),
-
-              // Email field
-              TextFormField(
-                controller: _emailController,
-                enabled: !_isLoading,
-                decoration: InputDecoration(
-                  labelText: 'Email',
-                  hintText: 'exemple@email.com',
-                  prefixIcon: const Icon(Icons.email_outlined),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF1E90FF),
-                      width: 2,
-                    ),
-                  ),
-                ),
-                keyboardType: TextInputType.emailAddress,
               ),
-              const SizedBox(height: 16),
-
-              // Password field
-              TextFormField(
-                controller: _passwordController,
-                enabled: !_isLoading,
-                obscureText: _obscurePassword,
-                decoration: InputDecoration(
-                  labelText: 'Mot de passe',
-                  hintText: '••••••••',
-                  prefixIcon: const Icon(Icons.lock_outlined),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _obscurePassword = !_obscurePassword;
-                      });
-                    },
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade300),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(
-                      color: Color(0xFF1E90FF),
-                      width: 2,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-
-              // Forgot password link
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: _isLoading
-                      ? null
-                      : () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (context) =>
-                                  const ForgotPasswordScreen(),
-                            ),
-                          );
-                        },
-                  child: Text(
-                    'Mot de passe oublié?',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: AppColors.gradientBlue,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Login button
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _login,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.gradientBlue,
-                    disabledBackgroundColor: Colors.grey.shade300,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            valueColor: AlwaysStoppedAnimation(
-                              Colors.grey.shade600,
-                            ),
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : Text(
-                          'Se connecter',
-                          style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                          ),
-                        ),
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Sign up link
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Pas encore de compte? ',
-                    style: GoogleFonts.poppins(
-                      fontSize: 14,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _isLoading
-                        ? null
-                        : () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const RegisterScreen(),
-                              ),
-                            );
-                          },
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Text(
-                      'Créer un compte',
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.gradientBlue,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 32),
-            ],
-          ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+class _AuthErrorMessage extends StatelessWidget {
+  const _AuthErrorMessage({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF2E9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFFD4B5)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.info_outline,
+            size: 20,
+            color: driftAuthOrange,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: GoogleFonts.montserrat(
+                fontSize: 12,
+                color: driftAuthInk,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

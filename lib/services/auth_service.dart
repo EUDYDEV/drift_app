@@ -55,7 +55,6 @@ class AuthService extends ChangeNotifier {
     required String phone,
     required String password,
   }) async {
-    final _ = phone;
     final url = Uri.parse('$_baseUrl/auth/register');
     try {
       final response = await http.post(
@@ -64,6 +63,7 @@ class AuthService extends ChangeNotifier {
         body: jsonEncode({
           'full_name': fullName,
           'email': email,
+          if (phone.trim().isNotEmpty) 'phone': phone.trim(),
           'password': password,
         }),
       );
