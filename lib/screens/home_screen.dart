@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geocoding/geocoding.dart' as geocoding;
+import '../controllers/home_journey_controller.dart';
 import '../models/location_model.dart';
 import 'package:provider/provider.dart';
 import '../services/location_service.dart';
@@ -25,6 +26,7 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late LocationService _locationService;
+  late HomeJourneyController _journeyController;
   AppLocation? _currentLocation;
   final TextEditingController _destinationController = TextEditingController();
   final FocusNode _destinationFocusNode = FocusNode();
@@ -40,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _locationService = LocationService();
+    _journeyController = context.read<HomeJourneyController>();
     _locationService.addListener(() {
       if (mounted) {
         setState(() => _currentLocation = _locationService.currentLocation);
@@ -57,7 +60,19 @@ class _HomeScreenState extends State<HomeScreen> {
         _applySharedDestination(widget.sharedLocation!);
       }
       _locationService.startLocationListener();
+      _resumePendingJourney();
     }
+  }
+
+  void _resumePendingJourney() {
+    final pending = _journeyController.pendingDestination;
+    if (pending == null || !context.read<AuthService>().isAuthenticated) {
+      return;
+    }
+    _applySharedDestination(pending);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _openTimingForDestination();
+    });
   }
 
   void _applySharedDestination(AppLocation sharedLocation) {
@@ -127,13 +142,13 @@ class _HomeScreenState extends State<HomeScreen> {
           await geocoding.locationFromAddress("$address, Abidjan");
       if (locations.isNotEmpty) {
         final loc = locations.first;
-        _selectLocation(
+        await _selectLocation(
             {'display': address, 'lat': loc.latitude, 'lon': loc.longitude});
         return;
       }
     } catch (e) {
       if (_suggestions.isNotEmpty) {
-        _selectLocation(_suggestions.first);
+        await _selectLocation(_suggestions.first);
         return;
       }
     }
@@ -143,8 +158,15 @@ class _HomeScreenState extends State<HomeScreen> {
         content: Text('Lieu introuvable. Touchez la carte pour choisir.')));
   }
 
-  void _selectLocation(Map<String, dynamic> suggestion) {
+  Future<void> _selectLocation(Map<String, dynamic> suggestion) async {
     final dest = LatLng(suggestion['lat'], suggestion['lon']);
+    final destination = AppLocation(
+      latitude: dest.latitude,
+      longitude: dest.longitude,
+      address: suggestion['display'],
+      city: _extractCity(suggestion['display']),
+      country: "Côte d'Ivoire",
+    );
     setState(() {
       _destinationController.text = suggestion['display'];
       _destinationCoordinates = dest;
@@ -154,16 +176,32 @@ class _HomeScreenState extends State<HomeScreen> {
     _fetchRoute(dest);
     _fitMap(dest);
     FocusScope.of(context).unfocus();
-    _continueRideFlow();
+    _journeyController.rememberDestination(destination);
+
+    if (!context.read<AuthService>().isAuthenticated) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      );
+      return;
+    }
+
+    await _openTimingForDestination();
   }
 
-  Future<void> _chooseRideTiming() async {
+  Future<void> _openTimingForDestination() async {
     _destinationFocusNode.unfocus();
     final selection = await showRideTimingDialog(context);
     if (selection == null || !mounted) return;
 
     setState(() => _timingSelection = selection);
-    _destinationFocusNode.requestFocus();
+    _journeyController.consumeDestination();
+    _continueRideFlow();
+  }
+
+  String _extractCity(String address) {
+    final parts = address.split(',');
+    return parts.length > 1 ? parts.last.trim() : address.trim();
   }
 
   void _continueRideFlow() {
@@ -245,7 +283,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_currentLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Votre position actuelle est en cours de recuperation.'),
+          content:
+              Text('Votre position actuelle est en cours de recuperation.'),
         ),
       );
       return;
@@ -384,9 +423,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       TextField(
                         controller: _destinationController,
                         focusNode: _destinationFocusNode,
-                        onTap: _timingSelection == null
-                            ? _chooseRideTiming
-                            : null,
                         textInputAction: TextInputAction.search,
                         onSubmitted: _validateDestination,
                         decoration: InputDecoration(
@@ -439,5 +475,4 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-
 }

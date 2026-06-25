@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'controllers/experience_filter_controller.dart';
+import 'controllers/home_journey_controller.dart';
 import 'controllers/main_navigation_controller.dart';
+import 'controllers/pack_journey_controller.dart';
 import 'controllers/ride_state_controller.dart';
 import 'models/location_model.dart';
 import 'screens/auth/login_screen.dart';
@@ -48,6 +50,8 @@ class DriFtApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(create: (_) => MainNavigationController()),
         ChangeNotifierProvider(create: (_) => ExperienceFilterController()),
+        ChangeNotifierProvider(create: (_) => HomeJourneyController()),
+        ChangeNotifierProvider(create: (_) => PackJourneyController()),
         ChangeNotifierProvider(
           create: (_) => RideStateController()..initialize(),
         ),

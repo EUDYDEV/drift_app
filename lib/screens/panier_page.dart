@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+
+import '../controllers/pack_journey_controller.dart';
 import '../theme/app_colors.dart';
 import '../models/cart_model.dart';
+import '../widgets/pack_configurator_panel.dart';
 import 'paiement_page.dart';
 
 class PanierPage extends StatefulWidget {
@@ -32,8 +36,10 @@ class _PanierPageState extends State<PanierPage> {
 
   @override
   Widget build(BuildContext context) {
+    context.watch<PackJourneyController>();
     final items = CartModel.items;
     final single = items.length == 1;
+    final shortActivity = _shortActivity(items);
 
     return Scaffold(
       backgroundColor: AppColors.white,
@@ -43,15 +49,32 @@ class _PanierPageState extends State<PanierPage> {
             _buildHeader(items.length),
             Expanded(
               child: items.isEmpty
-                  ? _buildEmpty()
+                  ? ListView(
+                      padding: const EdgeInsets.only(bottom: 110),
+                      children: [
+                        const PackConfiguratorPanel(),
+                        SizedBox(height: 280, child: _buildEmpty()),
+                      ],
+                    )
                   : Stack(
                       children: [
                         ListView(
-                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 180),
+                          padding: const EdgeInsets.only(bottom: 180),
                           children: [
-                            ...items.map((item) => _buildCartCard(item)),
-                            const SizedBox(height: 12),
-                            _buildTotalBlock(),
+                            const PackConfiguratorPanel(),
+                            if (shortActivity != null)
+                              _buildAiSuggestionsBanner(shortActivity),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 20),
+                              child: Column(
+                                children: [
+                                  ...items.map((item) => _buildCartCard(item)),
+                                  const SizedBox(height: 12),
+                                  _buildTotalBlock(),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                         Positioned(
@@ -69,6 +92,121 @@ class _PanierPageState extends State<PanierPage> {
     );
   }
 
+  CartItem? _shortActivity(List<CartItem> items) {
+    if (items.length != 1) return null;
+    final item = items.first;
+    final duration = (item.metadata['durationMinutes'] as num?)?.toInt() ??
+        (item.metadata['duration_minutes'] as num?)?.toInt();
+    final isActivity = item.type == 'activity' ||
+        item.serviceType == 'ticket_jeu' ||
+        item.serviceType == 'ticket_cinema';
+    if (!isActivity || (duration != null && duration > 180)) return null;
+    return item;
+  }
+
+  Widget _buildAiSuggestionsBanner(CartItem activity) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.orange.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.orange.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome, color: AppColors.orange, size: 19),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Drift IA : Optimisez le reste de votre journée',
+                  style: GoogleFonts.montserrat(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.darkText,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Votre activité est courte. Ces idées près de ${activity.partnerCity ?? 'votre destination'} sont libres et n’imposent aucun budget global.',
+            style: GoogleFonts.montserrat(
+              fontSize: 10,
+              color: AppColors.grayText,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _aiSuggestionRow(
+            icon: Icons.restaurant_outlined,
+            label: 'Restaurant local pour midi',
+            price: 12000,
+            type: 'restaurant',
+          ),
+          const SizedBox(height: 8),
+          _aiSuggestionRow(
+            icon: Icons.nightlife_outlined,
+            label: 'Lounge calme en soirée',
+            price: 18000,
+            type: 'activity',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _aiSuggestionRow({
+    required IconData icon,
+    required String label,
+    required int price,
+    required String type,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: AppColors.darkText),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            '$label · ${CartModel.formatCurrency(price)}',
+            style: GoogleFonts.montserrat(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Ajouter au panier',
+          onPressed: () {
+            CartModel.add(
+              CartItem(
+                id: 'ai-$type-${DateTime.now().millisecondsSinceEpoch}',
+                type: type,
+                name: label,
+                subtitle: 'Suggestion libre Drift IA',
+                priceDisplay: CartModel.formatCurrency(price),
+                priceValue: price,
+                color: AppColors.orange,
+                icon: icon,
+                metadata: const <String, dynamic>{'source': 'drift_ai'},
+              ),
+            );
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('$label ajouté au panier')),
+            );
+          },
+          icon: const Icon(Icons.add_circle, color: AppColors.orange),
+        ),
+      ],
+    );
+  }
+
   // ─── Header ───────────────────────────────────────────────────────────────
   Widget _buildHeader(int count) {
     return Container(
@@ -79,7 +217,8 @@ class _PanierPageState extends State<PanierPage> {
           ShaderMask(
             blendMode: BlendMode.srcIn,
             shaderCallback: (b) => AppColors.blueViolet.createShader(b),
-            child: const Icon(Icons.shopping_bag, color: Colors.white, size: 26),
+            child:
+                const Icon(Icons.shopping_bag, color: Colors.white, size: 26),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -115,9 +254,9 @@ class _PanierPageState extends State<PanierPage> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha:0.15),
+                  color: Colors.red.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.red.withValues(alpha:0.3)),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
                 ),
                 child: Text(
                   'Vider',
@@ -137,10 +276,11 @@ class _PanierPageState extends State<PanierPage> {
   // ─── Carte item du panier ─────────────────────────────────────────────────
   Widget _buildCartCard(CartItem item) {
     final typeLabel = {
-      'hotel': 'Hôtel',
-      'chauffeur': 'Chauffeur',
-      'restaurant': 'Restaurant',
-    }[item.type] ?? item.type;
+          'hotel': 'Hôtel',
+          'chauffeur': 'Chauffeur',
+          'restaurant': 'Restaurant',
+        }[item.type] ??
+        item.type;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -149,7 +289,7 @@ class _PanierPageState extends State<PanierPage> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha:0.07),
+            color: Colors.black.withValues(alpha: 0.07),
             blurRadius: 16,
             offset: const Offset(0, 4),
           ),
@@ -165,10 +305,10 @@ class _PanierPageState extends State<PanierPage> {
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                color: item.color.withValues(alpha:0.12),
+                color: item.color.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                    color: item.color.withValues(alpha:0.25), width: 1.5),
+                    color: item.color.withValues(alpha: 0.25), width: 1.5),
               ),
               child: Icon(item.icon, color: item.color, size: 26),
             ),
@@ -184,7 +324,7 @@ class _PanierPageState extends State<PanierPage> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 2),
                         decoration: BoxDecoration(
-                          color: item.color.withValues(alpha:0.1),
+                          color: item.color.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -234,7 +374,7 @@ class _PanierPageState extends State<PanierPage> {
                 width: 32,
                 height: 32,
                 decoration: BoxDecoration(
-                  color: Colors.red.withValues(alpha:0.08),
+                  color: Colors.red.withValues(alpha: 0.08),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(Icons.delete_outline,
@@ -329,8 +469,7 @@ class _PanierPageState extends State<PanierPage> {
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) =>
-                  PaiementPage(items: List.from(CartModel.items)),
+              builder: (_) => PaiementPage(items: List.from(CartModel.items)),
             ),
           ),
           child: Container(
@@ -340,7 +479,7 @@ class _PanierPageState extends State<PanierPage> {
               borderRadius: BorderRadius.circular(28),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.orange.withValues(alpha:0.45),
+                  color: AppColors.orange.withValues(alpha: 0.45),
                   blurRadius: 18,
                   offset: const Offset(0, 7),
                 ),
@@ -365,8 +504,8 @@ class _PanierPageState extends State<PanierPage> {
               ? () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => PaiementPage(
-                          items: [CartModel.items.first]),
+                      builder: (_) =>
+                          PaiementPage(items: [CartModel.items.first]),
                     ),
                   )
               : null,
@@ -375,13 +514,13 @@ class _PanierPageState extends State<PanierPage> {
             height: 44,
             decoration: BoxDecoration(
               color: single
-                  ? AppColors.gradientBlue.withValues(alpha:0.1)
-                  : Colors.grey.withValues(alpha:0.08),
+                  ? AppColors.gradientBlue.withValues(alpha: 0.1)
+                  : Colors.grey.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(22),
               border: Border.all(
                 color: single
-                    ? AppColors.gradientBlue.withValues(alpha:0.4)
-                    : Colors.grey.withValues(alpha:0.2),
+                    ? AppColors.gradientBlue.withValues(alpha: 0.4)
+                    : Colors.grey.withValues(alpha: 0.2),
                 width: 1.5,
               ),
             ),
