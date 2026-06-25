@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
 import '../models/cart_model.dart';
+import '../models/issued_pack_ticket.dart';
 import '../services/auth_service.dart';
 import '../services/partner_catalog_service.dart';
 import '../services/partner_wifi_geofence_service.dart';
@@ -113,10 +114,19 @@ class _PaiementPageState extends State<PaiementPage> {
 
     try {
       final secureTicketService = context.read<SecureTicketService>();
-      final issuedTickets = await secureTicketService.issueTickets(
-        items: _items,
-        authService: authService,
-      );
+      final wifiGeofenceService =
+          context.read<PartnerWifiGeofenceService>();
+      final checkoutTickets = checkoutResult.data?['tickets'];
+      final issuedTickets = checkoutTickets is List
+          ? checkoutTickets
+              .whereType<Map<String, dynamic>>()
+              .map(IssuedPackTicket.fromJson)
+              .toList(growable: false)
+          : await secureTicketService.issueTickets(
+              items: _items,
+              authService: authService,
+            );
+      await secureTicketService.storeIssuedTickets(issuedTickets);
       final hydratedItems = secureTicketService.hydrateCartItemsWithTickets(
         items: _items,
         tickets: issuedTickets,
@@ -124,9 +134,7 @@ class _PaiementPageState extends State<PaiementPage> {
       _items = hydratedItems;
       CartModel.addAll(hydratedItems);
       CartModel.attachIssuedTickets(issuedTickets);
-      await context
-          .read<PartnerWifiGeofenceService>()
-          .activateTickets(issuedTickets);
+      await wifiGeofenceService.activateTickets(issuedTickets);
     } catch (error) {
       debugPrint('Secure ticket generation skipped: $error');
     }

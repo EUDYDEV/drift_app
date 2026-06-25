@@ -486,6 +486,7 @@ pub struct Payment {
 pub struct PaymentCheckoutResponse {
     pub payment: Payment,
     pub reservations: Vec<Reservation>,
+    pub tickets: Vec<PackTicket>,
     pub message: String,
 }
 

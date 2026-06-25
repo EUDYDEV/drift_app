@@ -1,7 +1,10 @@
-use crate::models::{
-    AppLocation, CreatePrestationRequest, CreateRideRequest, Driver, GeoPoint, Hotel, PackTicket,
-    Partner, PartnerCatalogPrestation, PartnerWifiAccess, Prestation, Reservation, Ride,
-    RideSettlementResponse, Room, User, Voyage,
+use crate::{
+    error::AppError,
+    models::{
+        AppLocation, CreatePrestationRequest, CreateRideRequest, Driver, GeoPoint, Hotel,
+        PackTicket, Partner, PartnerCatalogPrestation, PartnerWifiAccess, Prestation, Reservation,
+        Ride, RideSettlementResponse, Room, User, Voyage,
+    },
 };
 use chrono::{NaiveDate, Utc};
 use serde_json::Value;
@@ -1081,25 +1084,9 @@ pub async fn list_partner_catalog_prestations(
         .collect())
 }
 
-pub async fn get_partner_id_for_prestation(
-    pool: &PgPool,
-    prestation_id: Uuid,
-) -> Result<Option<Uuid>, sqlx::Error> {
-    let row = sqlx::query_as::<_, (Uuid,)>(
-        "SELECT partenaire_id
-         FROM prestations
-         WHERE id = $1",
-    )
-    .bind(prestation_id)
-    .fetch_optional(pool)
-    .await?;
-
-    Ok(row.map(|(partner_id,)| partner_id))
-}
-
 #[allow(clippy::too_many_arguments)]
-pub async fn create_pack_ticket(
-    pool: &PgPool,
+pub async fn create_pack_ticket_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
     ticket_id: Uuid,
     partner_id: Option<Uuid>,
@@ -1139,10 +1126,13 @@ pub async fn create_pack_ticket(
             i.reservation_end,
             pa.wifi_ssid,
             pa.wifi_password_encrypted,
-            jsonb_build_object(
-                'latitude', pa.latitude,
-                'longitude', pa.longitude
-            ) AS partner_address_gps
+            CASE
+                WHEN pa.id IS NULL THEN NULL
+                ELSE jsonb_build_object(
+                    'latitude', pa.latitude,
+                    'longitude', pa.longitude
+                )
+            END AS partner_address_gps
          FROM inserted i
          LEFT JOIN partenaires pa ON pa.id = i.partner_id",
     )
@@ -1158,10 +1148,54 @@ pub async fn create_pack_ticket(
     .bind(expires_at)
     .bind(reservation_start)
     .bind(reservation_end)
-    .fetch_one(pool)
+    .fetch_one(&mut **tx)
     .await?;
 
     Ok(PackTicket::from(row))
+}
+
+pub async fn get_issued_pack_ticket_for_cart_item(
+    pool: &PgPool,
+    user_id: Uuid,
+    cart_item_id: &str,
+) -> Result<Option<PackTicket>, sqlx::Error> {
+    let row = sqlx::query_as::<_, PackTicketRow>(
+        "SELECT
+            pt.ticket_id,
+            pt.cart_item_id,
+            pt.prestation_id,
+            pt.partner_id,
+            pt.service_type,
+            pt.name,
+            pt.token,
+            pt.issued_at,
+            pt.expires_at,
+            pt.reservation_start,
+            pt.reservation_end,
+            pa.wifi_ssid,
+            pa.wifi_password_encrypted,
+            CASE
+                WHEN pa.id IS NULL THEN NULL
+                ELSE jsonb_build_object(
+                    'latitude', pa.latitude,
+                    'longitude', pa.longitude
+                )
+            END AS partner_address_gps
+         FROM pack_tickets pt
+         LEFT JOIN partenaires pa ON pa.id = pt.partner_id
+         WHERE pt.user_id = $1
+           AND pt.cart_item_id = $2
+           AND pt.status = 'issued'
+           AND pt.expires_at > now()
+         ORDER BY pt.issued_at DESC
+         LIMIT 1",
+    )
+    .bind(user_id)
+    .bind(cart_item_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(PackTicket::from))
 }
 
 // ========== VOYAGE DAO ==========
@@ -1233,24 +1267,6 @@ pub async fn get_all_drivers(pool: &PgPool) -> Result<Vec<Driver>, sqlx::Error> 
     Ok(rows.into_iter().map(Driver::from).collect())
 }
 
-pub async fn get_driver_by_id(
-    pool: &PgPool,
-    driver_id: Uuid,
-) -> Result<Option<Driver>, sqlx::Error> {
-    let row = sqlx::query_as::<_, DriverRow>(
-        "SELECT id, name, phone_number, rating, review_count, vehicle_type,
-                price::DOUBLE PRECISION AS price, capacity, license_plate,
-                vehicle_color, status, current_location, eta, created_at
-         FROM drivers
-         WHERE id = $1",
-    )
-    .bind(driver_id)
-    .fetch_optional(pool)
-    .await?;
-
-    Ok(row.map(Driver::from))
-}
-
 pub async fn list_nearby_drivers(pool: &PgPool) -> Result<Vec<Driver>, sqlx::Error> {
     let rows = sqlx::query_as::<_, DriverRow>(
         "SELECT id, name, phone_number, rating, review_count, vehicle_type,
@@ -1285,7 +1301,7 @@ pub async fn create_ride_session(
     pool: &PgPool,
     user_id: Uuid,
     request: &CreateRideRequest,
-) -> Result<Ride, sqlx::Error> {
+) -> Result<Ride, AppError> {
     let terms = build_pricing_terms(request);
     let requested_duration_minutes = request.requested_duration_minutes.max(30);
     let estimated_time_text = request
@@ -1315,10 +1331,52 @@ pub async fn create_ride_session(
     let mut tx = pool.begin().await?;
 
     if let Some(driver_id) = request.driver_id {
-        sqlx::query("UPDATE drivers SET status = 'busy' WHERE id = $1")
-            .bind(driver_id)
-            .execute(&mut *tx)
-            .await?;
+        let locked_driver = sqlx::query_as::<_, (String, i32, String)>(
+            "SELECT vehicle_type, capacity, status
+             FROM drivers
+             WHERE id = $1
+             FOR UPDATE",
+        )
+        .bind(driver_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+        if locked_driver.2 != "available" {
+            return Err(AppError::Conflict(
+                "The selected driver is no longer available".to_string(),
+            ));
+        }
+
+        if locked_driver.1 < request.passenger_count {
+            return Err(AppError::Conflict(format!(
+                "The selected driver can only handle {} passenger(s)",
+                locked_driver.1
+            )));
+        }
+
+        let requires_mini_car =
+            request.group_context.eq_ignore_ascii_case("group") && request.passenger_count >= 10;
+        if requires_mini_car && !locked_driver.0.eq_ignore_ascii_case("mini-car") {
+            return Err(AppError::Conflict(
+                "A mini-car driver is required for groups of 10 or more passengers".to_string(),
+            ));
+        }
+
+        let claimed = sqlx::query(
+            "UPDATE drivers
+             SET status = 'busy'
+             WHERE id = $1 AND status = 'available'",
+        )
+        .bind(driver_id)
+        .execute(&mut *tx)
+        .await?;
+
+        if claimed.rows_affected() != 1 {
+            return Err(AppError::Conflict(
+                "The selected driver was booked by another customer".to_string(),
+            ));
+        }
     }
 
     let ride_id = sqlx::query_as::<_, (Uuid,)>(
@@ -1367,7 +1425,7 @@ pub async fn create_ride_session(
 
     get_ride_by_id_for_user(pool, ride_id, user_id)
         .await?
-        .ok_or(sqlx::Error::RowNotFound)
+        .ok_or(AppError::NotFound)
 }
 
 pub async fn create_legacy_ride(
@@ -1375,7 +1433,7 @@ pub async fn create_legacy_ride(
     user_id: Uuid,
     origin: &str,
     destination: &str,
-) -> Result<Ride, sqlx::Error> {
+) -> Result<Ride, AppError> {
     let request = CreateRideRequest {
         driver_id: None,
         pickup_location: default_location(origin),
@@ -1650,22 +1708,70 @@ pub async fn create_reservation(
     room_id: Uuid,
     start_date: NaiveDate,
     end_date: NaiveDate,
-) -> Result<Reservation, sqlx::Error> {
-    let row = sqlx::query_as::<_, ReservationRow>(
-        "INSERT INTO reservations (user_id, hotel_id, room_id, capacity, price, start_date, end_date)
-         SELECT $1, hotel_id, id, capacity, price, $3, $4
+) -> Result<Reservation, AppError> {
+    if end_date <= start_date {
+        return Err(AppError::BadRequest(
+            "endDate must be later than startDate".to_string(),
+        ));
+    }
+
+    let mut tx = pool.begin().await?;
+    let room = sqlx::query_as::<_, (Uuid, i32, f64, bool)>(
+        "SELECT hotel_id, capacity, price::DOUBLE PRECISION, available
          FROM rooms
-         WHERE id = $2
+         WHERE id = $1
+         FOR UPDATE",
+    )
+    .bind(room_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    if !room.3 {
+        return Err(AppError::Conflict(
+            "This room is currently unavailable".to_string(),
+        ));
+    }
+
+    let has_overlap = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (
+            SELECT 1
+            FROM reservations
+            WHERE room_id = $1
+              AND start_date < $3
+              AND end_date > $2
+        )",
+    )
+    .bind(room_id)
+    .bind(start_date)
+    .bind(end_date)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if has_overlap {
+        return Err(AppError::Conflict(
+            "This room is already reserved for the selected dates".to_string(),
+        ));
+    }
+
+    let row = sqlx::query_as::<_, ReservationRow>(
+        "INSERT INTO reservations (
+            user_id, hotel_id, room_id, capacity, price, start_date, end_date
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, user_id, hotel_id, room_id, capacity,
                    price::DOUBLE PRECISION AS price, start_date, end_date, created_at",
     )
     .bind(user_id)
+    .bind(room.0)
     .bind(room_id)
+    .bind(room.1)
+    .bind(room.2)
     .bind(start_date)
     .bind(end_date)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
 
+    tx.commit().await?;
     Ok(Reservation::from(row))
 }
 

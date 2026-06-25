@@ -98,13 +98,19 @@ class SecureTicketService {
         )
         .toList(growable: false);
 
+    await storeIssuedTickets(issued);
+    return issued;
+  }
+
+  Future<void> storeIssuedTickets(List<IssuedPackTicket> tickets) async {
+    if (tickets.isEmpty) return;
+
     final existing = await readStoredTickets();
     final merged = <String, IssuedPackTicket>{
       for (final ticket in existing) ticket.ticketId: ticket,
-      for (final ticket in issued) ticket.ticketId: ticket,
+      for (final ticket in tickets) ticket.ticketId: ticket,
     };
     await _persistTickets(merged.values.toList(growable: false));
-    return issued;
   }
 
   Future<List<IssuedPackTicket>> readStoredTickets() async {

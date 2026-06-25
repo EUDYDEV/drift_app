@@ -330,44 +330,39 @@ pub async fn issue_pack_tickets(
             return Err(AppError::BadRequest("serviceType is required".to_string()));
         }
 
-        let resolved_partner_id = if let Some(partner_id) = item.partner_id {
-            Some(partner_id)
-        } else if let Some(prestation_id) = item.prestation_id {
-            db::get_partner_id_for_prestation(&pool, prestation_id).await?
-        } else {
-            None
-        };
+        if item.name.trim().is_empty() {
+            return Err(AppError::BadRequest("name is required".to_string()));
+        }
 
-        let issued_at = chrono::Utc::now();
-        let expires_at = item
-            .reservation_end
-            .unwrap_or_else(|| issued_at + chrono::Duration::days(30));
-        let ticket_id = Uuid::new_v4();
-        let token = auth::create_pack_ticket_jwt(
-            auth_user.0,
-            ticket_id,
-            resolved_partner_id,
-            item.prestation_id,
-            &item.service_type,
-            expires_at,
-        )?;
+        let ticket =
+            db::get_issued_pack_ticket_for_cart_item(&pool, auth_user.0, &item.cart_item_id)
+                .await?
+                .ok_or_else(|| {
+                    AppError::Conflict(format!(
+                        "No paid ticket exists for cart item {}",
+                        item.cart_item_id
+                    ))
+                })?;
 
-        let ticket = db::create_pack_ticket(
-            &pool,
-            auth_user.0,
-            ticket_id,
-            resolved_partner_id,
-            item.prestation_id,
-            &item.cart_item_id,
-            &item.service_type,
-            &item.name,
-            &token,
-            issued_at,
-            expires_at,
-            item.reservation_start,
-            item.reservation_end,
-        )
-        .await?;
+        if !ticket.service_type.eq_ignore_ascii_case(&item.service_type)
+            || item
+                .prestation_id
+                .is_some_and(|prestation_id| ticket.prestation_id != Some(prestation_id))
+            || item
+                .partner_id
+                .is_some_and(|partner_id| ticket.partner_id != Some(partner_id))
+            || item
+                .reservation_start
+                .is_some_and(|start| ticket.reservation_start != Some(start))
+            || item
+                .reservation_end
+                .is_some_and(|end| ticket.reservation_end != Some(end))
+        {
+            return Err(AppError::BadRequest(format!(
+                "Ticket ownership mismatch for cart item {}",
+                item.cart_item_id
+            )));
+        }
 
         tickets.push(ticket);
     }
@@ -498,34 +493,6 @@ pub async fn create_ride(
         ));
     }
 
-    if let Some(driver_id) = req.driver_id {
-        let driver = db::get_driver_by_id(&pool, driver_id)
-            .await?
-            .ok_or(AppError::NotFound)?;
-
-        if driver.status != "available" {
-            return Err(AppError::BadRequest(
-                "The selected driver is not available for booking".to_string(),
-            ));
-        }
-
-        if driver.capacity < req.passenger_count {
-            return Err(AppError::BadRequest(format!(
-                "The selected driver can only handle {} passenger(s)",
-                driver.capacity
-            )));
-        }
-
-        let requires_mini_car =
-            req.group_context.eq_ignore_ascii_case("group") && req.passenger_count >= 10;
-
-        if requires_mini_car && !driver.vehicle_type.eq_ignore_ascii_case("mini-car") {
-            return Err(AppError::BadRequest(
-                "A mini-car driver is required for groups of 10 or more passengers".to_string(),
-            ));
-        }
-    }
-
     let ride = db::create_ride_session(&pool, auth_user.0, &req).await?;
     Ok((StatusCode::CREATED, Json(ride)))
 }
@@ -605,9 +572,9 @@ pub async fn create_reservation(
     let end_date = NaiveDate::parse_from_str(&req.end_date, "%Y-%m-%d")
         .map_err(|_| AppError::Internal("Invalid end_date format".to_string()))?;
 
-    if end_date < start_date {
+    if end_date <= start_date {
         return Err(AppError::BadRequest(
-            "endDate must be greater than or equal to startDate".to_string(),
+            "endDate must be later than startDate".to_string(),
         ));
     }
 
