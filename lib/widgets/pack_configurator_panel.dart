@@ -60,242 +60,247 @@ class _PackConfiguratorPanelState extends State<PackConfiguratorPanel> {
           ),
         ],
       ),
-      child: Column(
-        children: [
-          InkWell(
-            onTap: () => setState(() => _expanded = !_expanded),
-            borderRadius: BorderRadius.circular(22),
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Row(
-                children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: AppColors.orange.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(12),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(22),
+        child: Column(
+          children: [
+            InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              borderRadius: BorderRadius.circular(22),
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: AppColors.orange.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.auto_awesome,
+                        color: AppColors.orange,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.auto_awesome,
-                      color: AppColors.orange,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'CONFIGURATEUR DRIFT',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.darkText,
+                              letterSpacing: 0.7,
+                            ),
+                          ),
+                          Text(
+                            controller.plan == null
+                                ? 'Créez votre séjour sur mesure'
+                                : '${controller.plan!.destination} · ${CartModel.formatCurrency(controller.plan!.total)}',
+                            style: GoogleFonts.montserrat(
+                              fontSize: 11,
+                              color: AppColors.grayText,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Icon(
+                      _expanded ? Icons.expand_less : Icons.expand_more,
+                      color: AppColors.grayText,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_expanded)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Divider(color: Color(0xFFEEEEF1)),
+                    const SizedBox(height: 14),
+                    _textField(
+                      controller: _destinationController,
+                      label: 'Destination',
+                      hint: 'Assinie, Yamoussoukro...',
+                      icon: Icons.place_outlined,
+                      onChanged: controller.updateDestination,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
                       children: [
-                        Text(
-                          'CONFIGURATEUR DRIFT',
-                          style: GoogleFonts.montserrat(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w900,
-                            color: AppColors.darkText,
-                            letterSpacing: 0.7,
+                        Expanded(
+                          child: _textField(
+                            controller: _budgetController,
+                            label: 'Budget max global (CFA)',
+                            hint: '250000',
+                            icon: Icons.account_balance_wallet_outlined,
+                            keyboardType: TextInputType.number,
+                            onChanged: (value) {
+                              controller.updateBudget(
+                                int.tryParse(value.replaceAll(' ', '')) ?? 0,
+                              );
+                            },
                           ),
                         ),
-                        Text(
-                          controller.plan == null
-                              ? 'Créez votre séjour sur mesure'
-                              : '${controller.plan!.destination} · ${CartModel.formatCurrency(controller.plan!.total)}',
-                          style: GoogleFonts.montserrat(
-                            fontSize: 11,
-                            color: AppColors.grayText,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _textField(
+                            controller: _durationController,
+                            label: 'Durée (jours)',
+                            hint: '2',
+                            icon: Icons.calendar_today_outlined,
+                            keyboardType: TextInputType.number,
+                            onChanged: (value) {
+                              controller.updateDuration(
+                                int.tryParse(value) ?? 1,
+                              );
+                            },
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  Icon(
-                    _expanded ? Icons.expand_less : Icons.expand_more,
-                    color: AppColors.grayText,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_expanded)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(18, 0, 18, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Divider(color: Color(0xFFEEEEF1)),
-                  const SizedBox(height: 14),
-                  _textField(
-                    controller: _destinationController,
-                    label: 'Destination',
-                    hint: 'Assinie, Yamoussoukro...',
-                    icon: Icons.place_outlined,
-                    onChanged: controller.updateDestination,
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _textField(
-                          controller: _budgetController,
-                          label: 'Budget max global (CFA)',
-                          hint: '250000',
-                          icon: Icons.account_balance_wallet_outlined,
-                          keyboardType: TextInputType.number,
-                          onChanged: (value) {
-                            controller.updateBudget(
-                              int.tryParse(value.replaceAll(' ', '')) ?? 0,
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _textField(
-                          controller: _durationController,
-                          label: 'Durée (jours)',
-                          hint: '2',
-                          icon: Icons.calendar_today_outlined,
-                          keyboardType: TextInputType.number,
-                          onChanged: (value) {
-                            controller.updateDuration(
-                              int.tryParse(value) ?? 1,
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  _sectionLabel('Type de moment'),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<PackMomentType>(
-                    initialValue: controller.momentType,
-                    decoration: _inputDecoration(Icons.auto_awesome_outlined),
-                    items: PackMomentType.values
-                        .map(
-                          (value) => DropdownMenuItem(
-                            value: value,
-                            child: Text(value.label),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: (value) {
-                      if (value != null) controller.updateMoment(value);
-                    },
-                  ),
-                  const SizedBox(height: 18),
-                  _sectionLabel('Transport'),
-                  const SizedBox(height: 8),
-                  RadioGroup<PackTransportMode>(
-                    groupValue: controller.transportMode,
-                    onChanged: (value) {
-                      if (value != null) {
-                        controller.updateTransportMode(value);
-                      }
-                    },
-                    child: Column(
-                      children: PackTransportMode.values
+                    const SizedBox(height: 14),
+                    _sectionLabel('Type de moment'),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<PackMomentType>(
+                      initialValue: controller.momentType,
+                      decoration: _inputDecoration(Icons.auto_awesome_outlined),
+                      items: PackMomentType.values
                           .map(
-                            (mode) => RadioListTile<PackTransportMode>(
-                              value: mode,
-                              dense: true,
-                              contentPadding: EdgeInsets.zero,
-                              activeColor: AppColors.orange,
-                              title: Text(
-                                mode.label,
-                                style: GoogleFonts.montserrat(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(value.label),
                             ),
                           )
                           .toList(growable: false),
+                      onChanged: (value) {
+                        if (value != null) controller.updateMoment(value);
+                      },
                     ),
-                  ),
-                  if (controller.transportMode == PackTransportMode.driftFleet)
-                    _fleetOptions(controller),
-                  if (controller.transportMode == PackTransportMode.external)
-                    _infoCard(
-                      'Drift organise le dépôt à la gare de départ et un chauffeur vous attend à la gare d’arrivée.',
-                    ),
-                  if (controller.transportMode == PackTransportMode.personal)
-                    _infoCard(
-                      'La gestion du transport est masquée et les frais véhicule passent à 0 CFA.',
-                    ),
-                  const SizedBox(height: 16),
-                  _momentFields(controller),
-                  const SizedBox(height: 12),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    activeThumbColor: AppColors.orange,
-                    title: Text(
-                      'L’hébergement possède un restaurant',
-                      style: _optionStyle(),
-                    ),
-                    value: controller.hotelHasRestaurant,
-                    onChanged: controller.updateHotelRestaurant,
-                  ),
-                  if (controller.hotelHasRestaurant)
-                    CheckboxListTile(
-                      contentPadding: EdgeInsets.zero,
-                      activeColor: AppColors.orange,
-                      title: Text(
-                        'Prendre les repas à l’hôtel',
-                        style: _optionStyle(),
-                      ),
-                      subtitle: const Text(
-                        'Les restaurants externes et leurs frais seront retirés.',
-                      ),
-                      value: controller.mealsAtHotel,
-                      onChanged: (value) =>
-                          controller.updateMealsAtHotel(value ?? false),
-                    ),
-                  if (controller.errorMessage != null)
-                    _messageCard(
-                      controller.errorMessage!,
-                      color: Colors.redAccent,
-                    ),
-                  if (controller.noticeMessage != null)
-                    _messageCard(
-                      controller.noticeMessage!,
-                      color: AppColors.orange,
-                    ),
-                  const SizedBox(height: 14),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        FocusScope.of(context).unfocus();
-                        final generated = controller.generatePlan();
-                        if (generated) {
-                          setState(() => _expanded = false);
+                    const SizedBox(height: 18),
+                    _sectionLabel('Transport'),
+                    const SizedBox(height: 8),
+                    RadioGroup<PackTransportMode>(
+                      groupValue: controller.transportMode,
+                      onChanged: (value) {
+                        if (value != null) {
+                          controller.updateTransportMode(value);
                         }
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.orange,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
+                      child: Column(
+                        children: PackTransportMode.values
+                            .map(
+                              (mode) => RadioListTile<PackTransportMode>(
+                                value: mode,
+                                dense: true,
+                                contentPadding: EdgeInsets.zero,
+                                activeColor: AppColors.orange,
+                                title: Text(
+                                  mode.label,
+                                  style: GoogleFonts.montserrat(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(growable: false),
                       ),
-                      icon: const Icon(Icons.auto_awesome),
-                      label: Text(
-                        'GÉNÉRER MON PACK',
-                        style: GoogleFonts.montserrat(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.6,
+                    ),
+                    if (controller.transportMode ==
+                        PackTransportMode.driftFleet)
+                      _fleetOptions(controller),
+                    if (controller.transportMode == PackTransportMode.external)
+                      _infoCard(
+                        'Drift organise le dépôt à la gare de départ et un chauffeur vous attend à la gare d’arrivée.',
+                      ),
+                    if (controller.transportMode == PackTransportMode.personal)
+                      _infoCard(
+                        'La gestion du transport est masquée et les frais véhicule passent à 0 CFA.',
+                      ),
+                    const SizedBox(height: 16),
+                    _momentFields(controller),
+                    const SizedBox(height: 12),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      activeThumbColor: AppColors.orange,
+                      title: Text(
+                        'L’hébergement possède un restaurant',
+                        style: _optionStyle(),
+                      ),
+                      value: controller.hotelHasRestaurant,
+                      onChanged: controller.updateHotelRestaurant,
+                    ),
+                    if (controller.hotelHasRestaurant)
+                      CheckboxListTile(
+                        contentPadding: EdgeInsets.zero,
+                        activeColor: AppColors.orange,
+                        title: Text(
+                          'Prendre les repas à l’hôtel',
+                          style: _optionStyle(),
+                        ),
+                        subtitle: const Text(
+                          'Les restaurants externes et leurs frais seront retirés.',
+                        ),
+                        value: controller.mealsAtHotel,
+                        onChanged: (value) =>
+                            controller.updateMealsAtHotel(value ?? false),
+                      ),
+                    if (controller.errorMessage != null)
+                      _messageCard(
+                        controller.errorMessage!,
+                        color: Colors.redAccent,
+                      ),
+                    if (controller.noticeMessage != null)
+                      _messageCard(
+                        controller.noticeMessage!,
+                        color: AppColors.orange,
+                      ),
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          FocusScope.of(context).unfocus();
+                          final generated = controller.generatePlan();
+                          if (generated) {
+                            setState(() => _expanded = false);
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.orange,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        icon: const Icon(Icons.auto_awesome),
+                        label: Text(
+                          'GÉNÉRER MON PACK',
+                          style: GoogleFonts.montserrat(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          if (controller.plan != null) _buildPlan(context, controller),
-        ],
+            if (controller.plan != null) _buildPlan(context, controller),
+          ],
+        ),
       ),
     );
   }
@@ -307,80 +312,84 @@ class _PackConfiguratorPanelState extends State<PackConfiguratorPanel> {
         color: const Color(0xFFF8F8FA),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        children: [
-          RadioGroup<DriftFleetOption>(
-            groupValue: controller.fleetOption,
-            onChanged: (value) {
-              if (value != null) controller.updateFleetOption(value);
-            },
-            child: Column(
-              children: DriftFleetOption.values
-                  .map(
-                    (option) => RadioListTile<DriftFleetOption>(
-                      value: option,
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      activeColor: AppColors.orange,
-                      title: Text(option.label, style: _optionStyle()),
-                    ),
-                  )
-                  .toList(growable: false),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          children: [
+            RadioGroup<DriftFleetOption>(
+              groupValue: controller.fleetOption,
+              onChanged: (value) {
+                if (value != null) controller.updateFleetOption(value);
+              },
+              child: Column(
+                children: DriftFleetOption.values
+                    .map(
+                      (option) => RadioListTile<DriftFleetOption>(
+                        value: option,
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        activeColor: AppColors.orange,
+                        title: Text(option.label, style: _optionStyle()),
+                      ),
+                    )
+                    .toList(growable: false),
+              ),
             ),
-          ),
-          if (controller.fleetOption == DriftFleetOption.customDisposal) ...[
-            Row(
-              children: [
-                Text('Jours de garde', style: _optionStyle()),
-                const Spacer(),
-                IconButton(
-                  onPressed: controller.disposalDays > 1
-                      ? () => controller
-                          .updateDisposalDays(controller.disposalDays - 1)
-                      : null,
-                  icon: const Icon(Icons.remove_circle_outline),
-                ),
-                Text(
-                  '${controller.disposalDays}',
-                  style: GoogleFonts.montserrat(
-                    fontWeight: FontWeight.w800,
+            if (controller.fleetOption == DriftFleetOption.customDisposal) ...[
+              Row(
+                children: [
+                  Text('Jours de garde', style: _optionStyle()),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: controller.disposalDays > 1
+                        ? () => controller
+                            .updateDisposalDays(controller.disposalDays - 1)
+                        : null,
+                    icon: const Icon(Icons.remove_circle_outline),
                   ),
-                ),
-                IconButton(
-                  onPressed: controller.disposalDays < controller.durationDays
-                      ? () => controller.updateDisposalDays(
-                            controller.disposalDays + 1,
-                          )
-                      : null,
-                  icon: const Icon(Icons.add_circle_outline),
-                ),
-              ],
+                  Text(
+                    '${controller.disposalDays}',
+                    style: GoogleFonts.montserrat(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: controller.disposalDays < controller.durationDays
+                        ? () => controller.updateDisposalDays(
+                              controller.disposalDays + 1,
+                            )
+                        : null,
+                    icon: const Icon(Icons.add_circle_outline),
+                  ),
+                ],
+              ),
+            ],
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              activeColor: AppColors.orange,
+              title: Text('Sans chauffeur', style: _optionStyle()),
+              subtitle: Text(
+                controller.canUseWithoutDriver
+                    ? 'Autorisé : le véhicule est conservé pendant tout le séjour.'
+                    : 'Indisponible pour cette formule logistique.',
+              ),
+              value: controller.withoutDriver,
+              onChanged: (value) {
+                final accepted = controller.updateWithoutDriver(value ?? false);
+                if (!accepted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Un chauffeur Drift est obligatoire pour cette formule.',
+                      ),
+                    ),
+                  );
+                }
+              },
             ),
           ],
-          CheckboxListTile(
-            contentPadding: EdgeInsets.zero,
-            activeColor: AppColors.orange,
-            title: Text('Sans chauffeur', style: _optionStyle()),
-            subtitle: Text(
-              controller.canUseWithoutDriver
-                  ? 'Autorisé : le véhicule est conservé pendant tout le séjour.'
-                  : 'Indisponible pour cette formule logistique.',
-            ),
-            value: controller.withoutDriver,
-            onChanged: (value) {
-              final accepted = controller.updateWithoutDriver(value ?? false);
-              if (!accepted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Un chauffeur Drift est obligatoire pour cette formule.',
-                    ),
-                  ),
-                );
-              }
-            },
-          ),
-        ],
+        ),
       ),
     );
   }

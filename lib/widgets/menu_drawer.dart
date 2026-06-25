@@ -5,7 +5,7 @@ import '../theme/app_colors.dart';
 import '../screens/menu/settings_page.dart';
 import '../screens/menu/profile_page.dart';
 import '../screens/menu/premium_page.dart';
-import '../screens/menu/help_page.dart';
+import '../screens/menu/support_chat_page.dart';
 import '../screens/menu/history_page.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/pages/majordome_brief_page.dart';
@@ -88,7 +88,7 @@ class MenuDrawer extends StatelessWidget {
                         Navigator.push(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => const HelpPage()));
+                                builder: (_) => const SupportChatPage()));
                       }),
                     ],
                   ),
