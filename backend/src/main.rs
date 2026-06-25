@@ -30,6 +30,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health_handler))
         .nest("/auth", routes::auth_routes())
         .nest("/partners", routes::partner_routes())
+        .nest("/api/partner", routes::partner_fleet_routes())
+        .nest("/api/driver", routes::driver_mission_routes())
         .nest("/voyages", routes::voyage_routes())
         .nest("/drivers", routes::driver_routes())
         .nest("/rides", routes::ride_routes())

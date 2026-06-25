@@ -103,6 +103,7 @@ struct LockedRoomRow {
 #[derive(Debug, sqlx::FromRow)]
 struct LockedRideRow {
     id: Uuid,
+    ride_type: String,
     estimated_price: f64,
     final_amount: f64,
     status: String,
@@ -206,6 +207,9 @@ pub async fn checkout(
         .to_ascii_uppercase();
 
     let mut tx = pool.begin().await?;
+    if req.items.iter().any(metadata_requests_without_driver) {
+        db::ensure_self_drive_eligible_tx(&mut tx, auth_user.0).await?;
+    }
     let priced_items = resolve_server_prices(&mut tx, auth_user.0, &req.items).await?;
     let server_total = priced_items.iter().map(|item| item.amount).sum::<f64>();
 
@@ -618,7 +622,7 @@ async fn resolve_server_prices(
 
         if let Some(ride_id) = extract_uuid_metadata(item, &["rideId", "ride_id"]) {
             let row = sqlx::query_as::<_, LockedRideRow>(
-                "SELECT id,
+                "SELECT id, ride_type,
                         estimated_price::DOUBLE PRECISION AS estimated_price,
                         final_amount::DOUBLE PRECISION AS final_amount,
                         status,
@@ -643,6 +647,10 @@ async fn resolve_server_prices(
                     "Ride {} cannot be paid in status {}",
                     row.id, row.status
                 )));
+            }
+
+            if row.ride_type == "withoutDriver" {
+                db::ensure_self_drive_eligible_tx(tx, user_id).await?;
             }
 
             if row.payment_status.eq_ignore_ascii_case("charged") {
@@ -1008,6 +1016,23 @@ fn metadata_number(item: &CheckoutPackItemRequest, keys: &[&str]) -> Option<f64>
         }
         value.as_str()?.trim().parse::<f64>().ok()
     })
+}
+
+fn metadata_requests_without_driver(item: &CheckoutPackItemRequest) -> bool {
+    let Some(metadata) = item.metadata.as_ref().and_then(Value::as_object) else {
+        return false;
+    };
+
+    metadata
+        .get("withoutDriver")
+        .or_else(|| metadata.get("without_driver"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+        || metadata
+            .get("rideType")
+            .or_else(|| metadata.get("ride_type"))
+            .and_then(Value::as_str)
+            .is_some_and(|value| value == "withoutDriver")
 }
 
 fn extract_uuid_metadata(item: &CheckoutPackItemRequest, keys: &[&str]) -> Option<Uuid> {

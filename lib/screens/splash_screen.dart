@@ -1,6 +1,9 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import '../services/auth_service.dart';
+import 'driver_mission_screen.dart';
 import 'main_navigation_page.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -61,9 +64,14 @@ class _SplashScreenState extends State<SplashScreen>
 
     await Future.delayed(const Duration(milliseconds: 1000));
     if (!mounted) return;
+    final authService = context.read<AuthService>();
+    await authService.initialize();
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const MainNavigationPage(),
+        pageBuilder: (_, __, ___) => authService.isDriver
+            ? const DriverMissionScreen()
+            : const MainNavigationPage(),
         transitionsBuilder: (_, animation, __, child) =>
             FadeTransition(opacity: animation, child: child),
         transitionDuration: const Duration(milliseconds: 500),
@@ -125,7 +133,7 @@ class _SplashScreenState extends State<SplashScreen>
                 style: GoogleFonts.montserrat(
                   fontSize: 15,
                   fontWeight: FontWeight.w300,
-                  color: Colors.white.withValues(alpha:0.88),
+                  color: Colors.white.withValues(alpha: 0.88),
                   letterSpacing: 3.5,
                 ),
               ),
@@ -146,8 +154,8 @@ class _WavePainter extends CustomPainter {
     final paint = Paint()
       ..shader = LinearGradient(
         colors: [
-          Colors.white.withValues(alpha:0.2),
-          Colors.white.withValues(alpha:0.8),
+          Colors.white.withValues(alpha: 0.2),
+          Colors.white.withValues(alpha: 0.8),
         ],
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height))
       ..style = PaintingStyle.stroke

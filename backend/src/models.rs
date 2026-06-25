@@ -9,11 +9,14 @@ pub struct User {
     pub id: Uuid,
     pub email: String,
     pub full_name: String,
+    pub role: String,
     pub account_balance: f64,
     pub penalty_balance: f64,
     pub active_fine_amount: f64,
     pub is_restricted: bool,
     pub restriction_reason: Option<String>,
+    pub identity_documents_verified: bool,
+    pub driving_license_status: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -126,6 +129,72 @@ pub struct PartnerLoginRequest {
 pub struct PartnerAuthResponse {
     pub partner: Partner,
     pub token: String,
+}
+
+// ========== COMPANY FLEET ==========
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanyVehicle {
+    pub id: Uuid,
+    pub company_id: Uuid,
+    pub prestation_id: Option<Uuid>,
+    pub name: String,
+    pub vehicle_type: String,
+    pub registration_number: String,
+    pub color: String,
+    pub capacity: i32,
+    pub hourly_rate: f64,
+    pub media_urls: Vec<String>,
+    pub is_available: bool,
+    pub operational_status: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateCompanyVehicleRequest {
+    pub prestation_id: Option<Uuid>,
+    pub name: String,
+    pub vehicle_type: String,
+    pub registration_number: String,
+    pub color: Option<String>,
+    pub capacity: i32,
+    pub hourly_rate: f64,
+    #[serde(default)]
+    pub media_urls: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanyDriver {
+    pub id: Uuid,
+    pub company_id: Uuid,
+    pub user_id: Uuid,
+    pub driver_profile_id: Option<Uuid>,
+    pub default_vehicle_id: Option<Uuid>,
+    pub employee_reference: Option<String>,
+    pub is_active: bool,
+    pub full_name: String,
+    pub email: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkCompanyDriverRequest {
+    pub user_id: Uuid,
+    pub driver_profile_id: Option<Uuid>,
+    pub default_vehicle_id: Option<Uuid>,
+    pub employee_reference: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssignDriverRequest {
+    pub driver_id: Uuid,
+    pub vehicle_id: Option<Uuid>,
 }
 
 // ========== PRESTATION ==========
@@ -269,6 +338,9 @@ pub struct AppLocation {
 #[serde(rename_all = "camelCase")]
 pub struct Driver {
     pub id: Uuid,
+    pub user_id: Option<Uuid>,
+    pub company_id: Option<Uuid>,
+    pub vehicle_id: Option<Uuid>,
     pub name: String,
     pub phone_number: String,
     pub rating: f64,
@@ -290,7 +362,10 @@ pub struct Driver {
 pub struct Ride {
     pub id: Uuid,
     pub user_id: Uuid,
+    pub company_id: Option<Uuid>,
+    pub vehicle_id: Option<Uuid>,
     pub driver_id: Option<Uuid>,
+    pub assigned_driver_user_id: Option<Uuid>,
     pub driver: Option<Driver>,
     pub origin: String,
     pub destination: String,
@@ -316,9 +391,12 @@ pub struct Ride {
     pub restriction_reason: Option<String>,
     pub auto_charge_attempted_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    pub assigned_at: Option<chrono::DateTime<chrono::Utc>>,
     pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub arrived_at: Option<chrono::DateTime<chrono::Utc>>,
     pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub pack_timeline: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -330,6 +408,8 @@ pub struct RequestRideRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRideRequest {
+    pub company_id: Option<Uuid>,
+    pub vehicle_id: Option<Uuid>,
     pub driver_id: Option<Uuid>,
     pub pickup_location: AppLocation,
     pub destination_location: AppLocation,
@@ -343,6 +423,7 @@ pub struct CreateRideRequest {
     pub seat_capacity: Option<i32>,
     pub quoted_price: f64,
     pub estimated_time_text: Option<String>,
+    pub pack_timeline: Option<Value>,
 }
 
 #[derive(Debug, Serialize)]
@@ -488,6 +569,20 @@ pub struct PaymentCheckoutResponse {
     pub reservations: Vec<Reservation>,
     pub tickets: Vec<PackTicket>,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DriverMission {
+    pub ride: Ride,
+    pub company_name: String,
+    pub vehicle: Option<CompanyVehicle>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateDriverMissionStatusRequest {
+    pub action: String,
 }
 
 // ========== JWT CLAIMS ==========

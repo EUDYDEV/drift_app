@@ -115,6 +115,8 @@ class RideService {
         return 'En cours';
       case RideStatus.overtime:
         return 'Overtime';
+      case RideStatus.arrived:
+        return 'Arrivee';
       case RideStatus.completed:
         return 'Terminee';
       case RideStatus.cancelled:

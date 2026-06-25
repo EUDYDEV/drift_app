@@ -5,6 +5,8 @@ import 'ride_model.dart';
 import 'ride_option_model.dart';
 
 class RideRequestDetails {
+  final String? companyId;
+  final String? vehicleId;
   final AppLocation pickupLocation;
   final AppLocation destinationLocation;
   final RideType rideType;
@@ -19,8 +21,11 @@ class RideRequestDetails {
   final double hourlyRate;
   final double estimatedPrice;
   final String estimatedTimeText;
+  final List<Map<String, dynamic>> packTimeline;
 
   const RideRequestDetails({
+    this.companyId,
+    this.vehicleId,
     required this.pickupLocation,
     required this.destinationLocation,
     required this.rideType,
@@ -35,6 +40,7 @@ class RideRequestDetails {
     required this.hourlyRate,
     required this.estimatedPrice,
     required this.estimatedTimeText,
+    this.packTimeline = const <Map<String, dynamic>>[],
   });
 
   bool get requiresMiniCar =>
@@ -86,9 +92,8 @@ class RideRequestDetails {
       destinationLocation: destinationLocation,
       rideType: selectedOption.type,
       scheduleType: scheduleType,
-      scheduledStart: scheduleType == RideScheduleType.scheduled
-          ? scheduledStart
-          : null,
+      scheduledStart:
+          scheduleType == RideScheduleType.scheduled ? scheduledStart : null,
       groupContext: groupContext,
       passengerCount: safePassengerCount,
       requestedDurationMinutes: safeDurationMinutes,
@@ -103,6 +108,8 @@ class RideRequestDetails {
 
   Map<String, dynamic> toJson({String? driverId}) {
     return {
+      if (companyId != null) 'companyId': companyId,
+      if (vehicleId != null) 'vehicleId': vehicleId,
       if (driverId != null) 'driverId': driverId,
       'pickupLocation': pickupLocation.toJson(),
       'destinationLocation': destinationLocation.toJson(),
@@ -116,6 +123,7 @@ class RideRequestDetails {
       'seatCapacity': seatCapacity,
       'quotedPrice': quotedPrice,
       'estimatedTimeText': estimatedTimeText,
+      'packTimeline': packTimeline,
     };
   }
 }

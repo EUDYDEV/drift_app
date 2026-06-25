@@ -10,6 +10,7 @@ import '../services/partner_wifi_geofence_service.dart';
 import '../services/payment_service.dart';
 import '../services/secure_ticket_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/driving_license_verification_sheet.dart';
 
 class PaiementPage extends StatefulWidget {
   final List<CartItem> items;
@@ -75,6 +76,18 @@ class _PaiementPageState extends State<PaiementPage> {
   }
 
   Future<void> _handleConfirmedPayment() async {
+    final containsSelfDrive = _items.any(
+      (item) =>
+          item.metadata['withoutDriver'] == true ||
+          item.metadata['rideType'] == 'withoutDriver',
+    );
+    if (containsSelfDrive) {
+      final verified = await ensureSelfDriveVerification(context);
+      if (!verified || !mounted) {
+        return;
+      }
+    }
+
     setState(() => _isProcessing = true);
 
     await _refreshPartnerPricing();
@@ -114,8 +127,7 @@ class _PaiementPageState extends State<PaiementPage> {
 
     try {
       final secureTicketService = context.read<SecureTicketService>();
-      final wifiGeofenceService =
-          context.read<PartnerWifiGeofenceService>();
+      final wifiGeofenceService = context.read<PartnerWifiGeofenceService>();
       final checkoutTickets = checkoutResult.data?['tickets'];
       final issuedTickets = checkoutTickets is List
           ? checkoutTickets

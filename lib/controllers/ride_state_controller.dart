@@ -80,6 +80,28 @@ class RideStateController extends ChangeNotifier {
     }
   }
 
+  Future<Ride> createSelfDriveSession({
+    required RideRequestDetails request,
+  }) async {
+    _isProcessing = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      final ride = await _driverService.createRideWithoutDriver(
+        request: request,
+      );
+      await _setActiveRide(ride);
+      return ride;
+    } catch (e) {
+      _error = e.toString();
+      rethrow;
+    } finally {
+      _isProcessing = false;
+      notifyListeners();
+    }
+  }
+
   Future<Ride?> refreshActiveRide() async {
     final ride = _activeRide;
     if (ride == null) return null;

@@ -9,6 +9,7 @@ enum RideStatus {
   scheduled,
   inProgress,
   overtime,
+  arrived,
   completed,
   cancelled,
   restricted,
@@ -22,7 +23,10 @@ enum RidePaymentStatus { included, charged, failed, pending }
 
 class Ride {
   final String id;
+  final String? companyId;
+  final String? vehicleId;
   final String? driverId;
+  final String? assignedDriverUserId;
   final AppLocation pickupLocation;
   final AppLocation destinationLocation;
   final RideType rideType;
@@ -47,15 +51,21 @@ class Ride {
   final String estimatedTime;
   final String? restrictionReason;
   final DateTime createdAt;
+  final DateTime? assignedAt;
   final DateTime? scheduledStart;
   final DateTime? startedAt;
+  final DateTime? arrivedAt;
   final DateTime? completedAt;
   final DateTime? updatedAt;
   final DateTime? autoChargeAttemptedAt;
+  final List<Map<String, dynamic>> packTimeline;
 
   const Ride({
     required this.id,
+    this.companyId,
+    this.vehicleId,
     required this.driverId,
+    this.assignedDriverUserId,
     required this.pickupLocation,
     required this.destinationLocation,
     required this.rideType,
@@ -80,11 +90,14 @@ class Ride {
     required this.estimatedTime,
     this.restrictionReason,
     required this.createdAt,
+    this.assignedAt,
     this.scheduledStart,
     this.startedAt,
+    this.arrivedAt,
     this.completedAt,
     this.updatedAt,
     this.autoChargeAttemptedAt,
+    this.packTimeline = const <Map<String, dynamic>>[],
   });
 
   bool get isTerminal =>
@@ -106,16 +119,19 @@ class Ride {
       fallbackAddress: json['destination'] as String? ?? 'Destination inconnue',
     );
 
-    final estimatedPrice = _doubleValue(json, 'estimatedPrice', fallbackKey: 'price');
+    final estimatedPrice =
+        _doubleValue(json, 'estimatedPrice', fallbackKey: 'price');
     final finalAmount =
         _doubleValue(json, 'finalAmount', fallback: estimatedPrice);
-    final overtimeAmount =
-        _doubleValue(json, 'overtimeAmount', fallback: 0);
+    final overtimeAmount = _doubleValue(json, 'overtimeAmount', fallback: 0);
     final penaltyAmount = _doubleValue(json, 'penaltyAmount', fallback: 0);
 
     return Ride(
       id: json['id']?.toString() ?? '',
+      companyId: json['companyId']?.toString(),
+      vehicleId: json['vehicleId']?.toString(),
       driverId: json['driverId']?.toString(),
+      assignedDriverUserId: json['assignedDriverUserId']?.toString(),
       pickupLocation: pickupLocation,
       destinationLocation: destinationLocation,
       rideType: _rideTypeValue(json['rideType'] as String?),
@@ -127,7 +143,8 @@ class Ride {
           ? Driver.fromJson(json['driver'] as Map<String, dynamic>)
           : null,
       origin: json['origin'] as String? ?? pickupLocation.address,
-      destination: json['destination'] as String? ?? destinationLocation.address,
+      destination:
+          json['destination'] as String? ?? destinationLocation.address,
       passengerCount: _intValue(json, 'passengerCount', fallback: 1),
       requestedDurationMinutes:
           _intValue(json, 'requestedDurationMinutes', fallback: 60),
@@ -140,24 +157,29 @@ class Ride {
       finalAmount: finalAmount,
       penaltyAmount: penaltyAmount,
       overtimeMinutes: _intValue(json, 'overtimeMinutes', fallback: 0),
-      estimatedTime:
-          json['estimatedTimeText'] as String? ??
+      estimatedTime: json['estimatedTimeText'] as String? ??
           json['estimatedTime'] as String? ??
           '',
       restrictionReason: json['restrictionReason'] as String?,
       createdAt: _dateValue(json['createdAt']) ?? DateTime.now(),
+      assignedAt: _dateValue(json['assignedAt']),
       scheduledStart: _dateValue(json['scheduledStart']),
       startedAt: _dateValue(json['startedAt']),
+      arrivedAt: _dateValue(json['arrivedAt']),
       completedAt: _dateValue(json['completedAt']),
       updatedAt: _dateValue(json['updatedAt']),
       autoChargeAttemptedAt: _dateValue(json['autoChargeAttemptedAt']),
+      packTimeline: _mapList(json['packTimeline']),
     );
   }
 
   Map<String, dynamic> toJson() {
     return {
       'id': id,
+      'companyId': companyId,
+      'vehicleId': vehicleId,
       'driverId': driverId,
+      'assignedDriverUserId': assignedDriverUserId,
       'pickupLocation': pickupLocation.toJson(),
       'destinationLocation': destinationLocation.toJson(),
       'rideType': rideType.name,
@@ -182,11 +204,14 @@ class Ride {
       'estimatedTimeText': estimatedTime,
       'restrictionReason': restrictionReason,
       'createdAt': createdAt.toIso8601String(),
+      'assignedAt': assignedAt?.toIso8601String(),
       'scheduledStart': scheduledStart?.toIso8601String(),
       'startedAt': startedAt?.toIso8601String(),
+      'arrivedAt': arrivedAt?.toIso8601String(),
       'completedAt': completedAt?.toIso8601String(),
       'updatedAt': updatedAt?.toIso8601String(),
       'autoChargeAttemptedAt': autoChargeAttemptedAt?.toIso8601String(),
+      'packTimeline': packTimeline,
     };
   }
 }
@@ -251,6 +276,8 @@ RideStatus _rideStatusValue(String? raw) {
       return RideStatus.inProgress;
     case 'overtime':
       return RideStatus.overtime;
+    case 'arrived':
+      return RideStatus.arrived;
     case 'completed':
       return RideStatus.completed;
     case 'cancelled':
@@ -317,4 +344,12 @@ DateTime? _dateValue(dynamic value) {
     return DateTime.tryParse(value);
   }
   return null;
+}
+
+List<Map<String, dynamic>> _mapList(dynamic value) {
+  if (value is! List) return const <Map<String, dynamic>>[];
+  return value
+      .whereType<Map>()
+      .map((item) => item.map((key, nested) => MapEntry('$key', nested)))
+      .toList(growable: false);
 }

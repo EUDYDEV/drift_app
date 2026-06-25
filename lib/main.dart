@@ -10,6 +10,7 @@ import 'controllers/pack_journey_controller.dart';
 import 'controllers/ride_state_controller.dart';
 import 'models/location_model.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/driver_mission_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/main_navigation_page.dart';
 import 'screens/ride_restriction_screen.dart';
@@ -89,6 +90,7 @@ class DriFtApp extends StatelessWidget {
           routes: {
             '/home': (context) => const MainNavigationPage(),
             '/login': (context) => const LoginScreen(),
+            '/driver-mission': (context) => const DriverMissionScreen(),
           },
           builder: (context, child) {
             final rideState = context.watch<RideStateController>();

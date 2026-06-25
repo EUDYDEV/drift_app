@@ -1,9 +1,10 @@
 use crate::{
     error::AppError,
     models::{
-        AppLocation, CreatePrestationRequest, CreateRideRequest, Driver, GeoPoint, Hotel,
-        PackTicket, Partner, PartnerCatalogPrestation, PartnerWifiAccess, Prestation, Reservation,
-        Ride, RideSettlementResponse, Room, User, Voyage,
+        AppLocation, CompanyDriver, CompanyVehicle, CreateCompanyVehicleRequest,
+        CreatePrestationRequest, CreateRideRequest, Driver, DriverMission, GeoPoint, Hotel,
+        LinkCompanyDriverRequest, PackTicket, Partner, PartnerCatalogPrestation, PartnerWifiAccess,
+        Prestation, Reservation, Ride, RideSettlementResponse, Room, User, Voyage,
     },
 };
 use chrono::{NaiveDate, Utc};
@@ -19,7 +20,10 @@ const RIDE_SELECT: &str = r#"
 SELECT
     r.id,
     r.user_id,
+    r.company_id,
+    r.vehicle_id,
     r.driver_id,
+    r.assigned_driver_user_id,
     r.origin,
     r.destination,
     r.pickup_location,
@@ -44,9 +48,12 @@ SELECT
     r.restriction_reason,
     r.auto_charge_attempted_at,
     r.created_at,
+    r.assigned_at,
     r.started_at,
+    r.arrived_at,
     r.completed_at,
     r.updated_at,
+    r.pack_timeline,
     d.name AS driver_name,
     d.phone_number AS driver_phone_number,
     d.rating AS driver_rating,
@@ -67,6 +74,9 @@ LEFT JOIN drivers d ON d.id = r.driver_id
 #[derive(Debug, sqlx::FromRow)]
 struct DriverRow {
     id: Uuid,
+    user_id: Option<Uuid>,
+    company_id: Option<Uuid>,
+    vehicle_id: Option<Uuid>,
     name: String,
     phone_number: String,
     rating: f64,
@@ -86,6 +96,9 @@ impl From<DriverRow> for Driver {
     fn from(row: DriverRow) -> Self {
         Self {
             id: row.id,
+            user_id: row.user_id,
+            company_id: row.company_id,
+            vehicle_id: row.vehicle_id,
             name: row.name,
             phone_number: row.phone_number,
             rating: row.rating,
@@ -223,6 +236,78 @@ impl From<PartnerRow> for Partner {
 }
 
 #[derive(Debug, sqlx::FromRow)]
+struct CompanyVehicleRow {
+    id: Uuid,
+    company_id: Uuid,
+    prestation_id: Option<Uuid>,
+    name: String,
+    vehicle_type: String,
+    registration_number: String,
+    color: String,
+    capacity: i32,
+    hourly_rate: f64,
+    media_urls: Json<Vec<String>>,
+    is_available: bool,
+    operational_status: String,
+    created_at: chrono::DateTime<Utc>,
+    updated_at: chrono::DateTime<Utc>,
+}
+
+impl From<CompanyVehicleRow> for CompanyVehicle {
+    fn from(row: CompanyVehicleRow) -> Self {
+        Self {
+            id: row.id,
+            company_id: row.company_id,
+            prestation_id: row.prestation_id,
+            name: row.name,
+            vehicle_type: row.vehicle_type,
+            registration_number: row.registration_number,
+            color: row.color,
+            capacity: row.capacity,
+            hourly_rate: row.hourly_rate,
+            media_urls: row.media_urls.0,
+            is_available: row.is_available,
+            operational_status: row.operational_status,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct CompanyDriverRow {
+    id: Uuid,
+    company_id: Uuid,
+    user_id: Uuid,
+    driver_profile_id: Option<Uuid>,
+    default_vehicle_id: Option<Uuid>,
+    employee_reference: Option<String>,
+    is_active: bool,
+    full_name: String,
+    email: String,
+    created_at: chrono::DateTime<Utc>,
+    updated_at: chrono::DateTime<Utc>,
+}
+
+impl From<CompanyDriverRow> for CompanyDriver {
+    fn from(row: CompanyDriverRow) -> Self {
+        Self {
+            id: row.id,
+            company_id: row.company_id,
+            user_id: row.user_id,
+            driver_profile_id: row.driver_profile_id,
+            default_vehicle_id: row.default_vehicle_id,
+            employee_reference: row.employee_reference,
+            is_active: row.is_active,
+            full_name: row.full_name,
+            email: row.email,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, sqlx::FromRow)]
 struct PrestationRow {
     id: Uuid,
     partenaire_id: Uuid,
@@ -353,7 +438,10 @@ impl From<PackTicketRow> for PackTicket {
 struct RideRow {
     id: Uuid,
     user_id: Uuid,
+    company_id: Option<Uuid>,
+    vehicle_id: Option<Uuid>,
     driver_id: Option<Uuid>,
+    assigned_driver_user_id: Option<Uuid>,
     origin: String,
     destination: String,
     pickup_location: Json<AppLocation>,
@@ -378,9 +466,12 @@ struct RideRow {
     restriction_reason: Option<String>,
     auto_charge_attempted_at: Option<chrono::DateTime<Utc>>,
     created_at: chrono::DateTime<Utc>,
+    assigned_at: Option<chrono::DateTime<Utc>>,
     started_at: Option<chrono::DateTime<Utc>>,
+    arrived_at: Option<chrono::DateTime<Utc>>,
     completed_at: Option<chrono::DateTime<Utc>>,
     updated_at: chrono::DateTime<Utc>,
+    pack_timeline: Json<Value>,
     driver_name: Option<String>,
     driver_phone_number: Option<String>,
     driver_rating: Option<f64>,
@@ -401,6 +492,9 @@ impl RideRow {
         let driver_id = self.driver_id?;
         Some(Driver {
             id: driver_id,
+            user_id: self.assigned_driver_user_id,
+            company_id: self.company_id,
+            vehicle_id: self.vehicle_id,
             name: self
                 .driver_name
                 .clone()
@@ -437,7 +531,10 @@ impl From<RideRow> for Ride {
         Self {
             id: row.id,
             user_id: row.user_id,
+            company_id: row.company_id,
+            vehicle_id: row.vehicle_id,
             driver_id: row.driver_id,
+            assigned_driver_user_id: row.assigned_driver_user_id,
             driver,
             origin: row.origin,
             destination: row.destination,
@@ -463,9 +560,12 @@ impl From<RideRow> for Ride {
             restriction_reason: row.restriction_reason,
             auto_charge_attempted_at: row.auto_charge_attempted_at,
             created_at: row.created_at,
+            assigned_at: row.assigned_at,
             started_at: row.started_at,
+            arrived_at: row.arrived_at,
             completed_at: row.completed_at,
             updated_at: row.updated_at,
+            pack_timeline: row.pack_timeline.0,
         }
     }
 }
@@ -485,6 +585,7 @@ struct RideRuntimeRow {
 #[derive(Debug, sqlx::FromRow)]
 struct RideFinancialRow {
     driver_id: Option<Uuid>,
+    vehicle_id: Option<Uuid>,
     estimated_price: f64,
     overtime_amount: f64,
     penalty_amount: f64,
@@ -758,23 +859,23 @@ async fn sync_ride_runtime_tx(
     let mut overtime_minutes = 0;
     let mut overtime_amount = 0.0;
 
-    if runtime.status != "requested" {
-        if effective_start > now {
-            next_status = "scheduled".to_string();
-        } else {
+    let timer_is_active = runtime.started_at.is_some()
+        && matches!(
+            runtime.status.as_str(),
+            "accepted" | "scheduled" | "inProgress" | "overtime"
+        );
+    if timer_is_active {
+        if effective_start <= now {
             let elapsed_minutes = (now - effective_start).num_minutes().max(0) as i32;
-
-            if elapsed_minutes > 0 && matches!(runtime.status.as_str(), "accepted" | "scheduled") {
-                next_status = "inProgress".to_string();
-            }
-
             overtime_minutes = (elapsed_minutes - requested_duration_minutes).max(0);
             overtime_amount =
                 ((overtime_minutes as f64 / 60.0) * runtime.hourly_rate.max(0.0)).ceil();
 
-            if overtime_minutes > 0 {
-                next_status = "overtime".to_string();
-            }
+            next_status = if overtime_minutes > 0 {
+                "overtime".to_string()
+            } else {
+                "inProgress".to_string()
+            };
         }
     }
 
@@ -811,8 +912,9 @@ pub async fn create_user(
     sqlx::query_as::<_, User>(
         "INSERT INTO users (email, full_name, password_hash)
          VALUES ($1, $2, $3)
-         RETURNING id, email, full_name, account_balance, penalty_balance, active_fine_amount,
-                   is_restricted, restriction_reason, created_at",
+         RETURNING id, email, full_name, role, account_balance, penalty_balance,
+                   active_fine_amount, is_restricted, restriction_reason,
+                   identity_documents_verified, driving_license_status, created_at",
     )
     .bind(email)
     .bind(full_name)
@@ -833,14 +935,97 @@ pub async fn get_user_by_email(
 
 pub async fn get_user_by_id(pool: &PgPool, id: Uuid) -> Result<Option<User>, sqlx::Error> {
     sqlx::query_as::<_, User>(
-        "SELECT id, email, full_name, account_balance, penalty_balance, active_fine_amount,
-                is_restricted, restriction_reason, created_at
+        "SELECT id, email, full_name, role, account_balance, penalty_balance,
+                active_fine_amount, is_restricted, restriction_reason,
+                identity_documents_verified, driving_license_status, created_at
          FROM users
          WHERE id = $1",
     )
     .bind(id)
     .fetch_optional(pool)
     .await
+}
+
+pub async fn store_driving_license(
+    pool: &PgPool,
+    user_id: Uuid,
+    file_name: &str,
+    mime_type: &str,
+    content: &[u8],
+    encryption_secret: &str,
+) -> Result<User, AppError> {
+    let mut tx = pool.begin().await?;
+
+    sqlx::query(
+        "INSERT INTO user_identity_documents (
+            user_id, document_type, original_file_name, mime_type,
+            encrypted_content, content_sha256, status
+         ) VALUES (
+            $1, 'driving_license', $2, $3,
+            pgp_sym_encrypt_bytea($4, $5, 'cipher-algo=aes256'),
+            encode(digest($4, 'sha256'), 'hex'),
+            'pending'
+         )
+         ON CONFLICT (user_id, document_type)
+         DO UPDATE SET
+            original_file_name = EXCLUDED.original_file_name,
+            mime_type = EXCLUDED.mime_type,
+            encrypted_content = EXCLUDED.encrypted_content,
+            content_sha256 = EXCLUDED.content_sha256,
+            status = 'pending',
+            reviewed_at = NULL,
+            reviewed_by = NULL,
+            updated_at = now()",
+    )
+    .bind(user_id)
+    .bind(file_name)
+    .bind(mime_type)
+    .bind(content)
+    .bind(encryption_secret)
+    .execute(&mut *tx)
+    .await?;
+
+    let user = sqlx::query_as::<_, User>(
+        "UPDATE users
+         SET identity_documents_verified = FALSE,
+             driving_license_status = 'pending'
+         WHERE id = $1
+         RETURNING id, email, full_name, role, account_balance, penalty_balance,
+                   active_fine_amount, is_restricted, restriction_reason,
+                   identity_documents_verified, driving_license_status, created_at",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
+
+    tx.commit().await?;
+    Ok(user)
+}
+
+pub async fn ensure_self_drive_eligible_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+) -> Result<(), AppError> {
+    let eligibility = sqlx::query_as::<_, (bool, String)>(
+        "SELECT identity_documents_verified, driving_license_status
+         FROM users
+         WHERE id = $1
+         FOR UPDATE",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut **tx)
+    .await?
+    .ok_or(AppError::Unauthorized)?;
+
+    if !eligibility.0 || eligibility.1 != "verified" {
+        return Err(AppError::Conflict(
+            "SELF_DRIVE_IDENTITY_NOT_VERIFIED: a verified driving license and identity profile are required"
+                .to_string(),
+        ));
+    }
+
+    Ok(())
 }
 
 // ========== PARTNER DAO ==========
@@ -952,6 +1137,178 @@ pub async fn get_partner_auth_by_telephone(
     .bind(telephone)
     .fetch_optional(pool)
     .await
+}
+
+// ========== COMPANY FLEET DAO ==========
+pub async fn create_company_vehicle(
+    pool: &PgPool,
+    company_id: Uuid,
+    request: &CreateCompanyVehicleRequest,
+) -> Result<CompanyVehicle, AppError> {
+    if let Some(prestation_id) = request.prestation_id {
+        let valid_prestation = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (
+                SELECT 1
+                FROM prestations
+                WHERE id = $1
+                  AND partenaire_id = $2
+                  AND type_service = 'location_voiture'
+            )",
+        )
+        .bind(prestation_id)
+        .bind(company_id)
+        .fetch_one(pool)
+        .await?;
+        if !valid_prestation {
+            return Err(AppError::Conflict(
+                "The linked prestation must be a vehicle rental owned by this company".to_string(),
+            ));
+        }
+    }
+
+    let row = sqlx::query_as::<_, CompanyVehicleRow>(
+        "INSERT INTO company_vehicles (
+            company_id, prestation_id, name, vehicle_type, registration_number,
+            color, capacity, hourly_rate, media_urls
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING id, company_id, prestation_id, name, vehicle_type,
+                   registration_number, color, capacity,
+                   hourly_rate::DOUBLE PRECISION AS hourly_rate,
+                   media_urls, is_available, operational_status, created_at, updated_at",
+    )
+    .bind(company_id)
+    .bind(request.prestation_id)
+    .bind(request.name.trim())
+    .bind(request.vehicle_type.trim())
+    .bind(request.registration_number.trim())
+    .bind(request.color.as_deref().unwrap_or("").trim())
+    .bind(request.capacity)
+    .bind(request.hourly_rate)
+    .bind(Json(request.media_urls.clone()))
+    .fetch_one(pool)
+    .await?;
+
+    Ok(CompanyVehicle::from(row))
+}
+
+pub async fn link_company_driver(
+    pool: &PgPool,
+    company_id: Uuid,
+    request: &LinkCompanyDriverRequest,
+) -> Result<CompanyDriver, AppError> {
+    let mut tx = pool.begin().await?;
+
+    let user_role =
+        sqlx::query_as::<_, (String,)>("SELECT role FROM users WHERE id = $1 FOR UPDATE")
+            .bind(request.user_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(AppError::NotFound)?;
+
+    if user_role.0 != "driver" {
+        return Err(AppError::Conflict(
+            "The selected user must have the driver role".to_string(),
+        ));
+    }
+
+    if let Some(vehicle_id) = request.default_vehicle_id {
+        let belongs_to_company = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (
+                SELECT 1 FROM company_vehicles
+                WHERE id = $1 AND company_id = $2
+            )",
+        )
+        .bind(vehicle_id)
+        .bind(company_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !belongs_to_company {
+            return Err(AppError::Conflict(
+                "The default vehicle does not belong to this company".to_string(),
+            ));
+        }
+    }
+
+    if let Some(driver_profile_id) = request.driver_profile_id {
+        let updated = sqlx::query(
+            "UPDATE drivers
+             SET user_id = $1,
+                 company_id = $2,
+                 vehicle_id = COALESCE($3, vehicle_id)
+             WHERE id = $4
+               AND (user_id IS NULL OR user_id = $1)
+               AND (company_id IS NULL OR company_id = $2)",
+        )
+        .bind(request.user_id)
+        .bind(company_id)
+        .bind(request.default_vehicle_id)
+        .bind(driver_profile_id)
+        .execute(&mut *tx)
+        .await?;
+
+        if updated.rows_affected() != 1 {
+            return Err(AppError::Conflict(
+                "The driver profile is already linked to another account or company".to_string(),
+            ));
+        }
+    }
+
+    let company_driver_id = sqlx::query_as::<_, (Uuid,)>(
+        "INSERT INTO company_drivers (
+            company_id, user_id, driver_profile_id, default_vehicle_id, employee_reference
+         ) VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (company_id, user_id)
+         DO UPDATE SET
+            driver_profile_id = EXCLUDED.driver_profile_id,
+            default_vehicle_id = EXCLUDED.default_vehicle_id,
+            employee_reference = EXCLUDED.employee_reference,
+            is_active = TRUE,
+            updated_at = now()
+         RETURNING id",
+    )
+    .bind(company_id)
+    .bind(request.user_id)
+    .bind(request.driver_profile_id)
+    .bind(request.default_vehicle_id)
+    .bind(request.employee_reference.as_deref())
+    .fetch_one(&mut *tx)
+    .await?
+    .0;
+
+    let row = sqlx::query_as::<_, CompanyDriverRow>(
+        "SELECT cd.id, cd.company_id, cd.user_id, cd.driver_profile_id,
+                cd.default_vehicle_id, cd.employee_reference, cd.is_active,
+                u.full_name, u.email, cd.created_at, cd.updated_at
+         FROM company_drivers cd
+         INNER JOIN users u ON u.id = cd.user_id
+         WHERE cd.id = $1",
+    )
+    .bind(company_driver_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+    Ok(CompanyDriver::from(row))
+}
+
+pub async fn list_company_drivers(
+    pool: &PgPool,
+    company_id: Uuid,
+) -> Result<Vec<CompanyDriver>, sqlx::Error> {
+    let rows = sqlx::query_as::<_, CompanyDriverRow>(
+        "SELECT cd.id, cd.company_id, cd.user_id, cd.driver_profile_id,
+                cd.default_vehicle_id, cd.employee_reference, cd.is_active,
+                u.full_name, u.email, cd.created_at, cd.updated_at
+         FROM company_drivers cd
+         INNER JOIN users u ON u.id = cd.user_id
+         WHERE cd.company_id = $1
+         ORDER BY cd.is_active DESC, u.full_name ASC",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.into_iter().map(CompanyDriver::from).collect())
 }
 
 // ========== PRESTATION DAO ==========
@@ -1255,7 +1612,7 @@ pub async fn get_voyage_by_id_and_user(
 // ========== DRIVER DAO ==========
 pub async fn get_all_drivers(pool: &PgPool) -> Result<Vec<Driver>, sqlx::Error> {
     let rows = sqlx::query_as::<_, DriverRow>(
-        "SELECT id, name, phone_number, rating, review_count, vehicle_type,
+        "SELECT id, user_id, company_id, vehicle_id, name, phone_number, rating, review_count, vehicle_type,
                 price::DOUBLE PRECISION AS price, capacity, license_plate,
                 vehicle_color, status, current_location, eta, created_at
          FROM drivers
@@ -1269,7 +1626,7 @@ pub async fn get_all_drivers(pool: &PgPool) -> Result<Vec<Driver>, sqlx::Error> 
 
 pub async fn list_nearby_drivers(pool: &PgPool) -> Result<Vec<Driver>, sqlx::Error> {
     let rows = sqlx::query_as::<_, DriverRow>(
-        "SELECT id, name, phone_number, rating, review_count, vehicle_type,
+        "SELECT id, user_id, company_id, vehicle_id, name, phone_number, rating, review_count, vehicle_type,
                 price::DOUBLE PRECISION AS price, capacity, license_plate,
                 vehicle_color, status, current_location, eta, created_at
          FROM drivers
@@ -1297,12 +1654,370 @@ pub async fn get_ride_by_id_for_user(
     fetch_ride_by_id(pool, ride_id, user_id).await
 }
 
+async fn fetch_company_vehicle_by_id(
+    pool: &PgPool,
+    vehicle_id: Uuid,
+) -> Result<Option<CompanyVehicle>, sqlx::Error> {
+    let row = sqlx::query_as::<_, CompanyVehicleRow>(
+        "SELECT id, company_id, prestation_id, name, vehicle_type,
+                registration_number, color, capacity,
+                hourly_rate::DOUBLE PRECISION AS hourly_rate,
+                media_urls, is_available, operational_status, created_at, updated_at
+         FROM company_vehicles
+         WHERE id = $1",
+    )
+    .bind(vehicle_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(CompanyVehicle::from))
+}
+
+pub async fn get_active_driver_mission(
+    pool: &PgPool,
+    driver_user_id: Uuid,
+) -> Result<Option<DriverMission>, AppError> {
+    let role = sqlx::query_as::<_, (String,)>("SELECT role FROM users WHERE id = $1")
+        .bind(driver_user_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    if role.0 != "driver" {
+        return Err(AppError::Unauthorized);
+    }
+
+    let query = format!(
+        "{RIDE_SELECT}
+         WHERE r.assigned_driver_user_id = $1
+           AND r.status IN ('requested', 'accepted', 'scheduled', 'inProgress', 'overtime', 'arrived')
+         ORDER BY COALESCE(r.scheduled_start, r.created_at) ASC
+         LIMIT 1"
+    );
+    let mut ride = sqlx::query_as::<_, RideRow>(&query)
+        .bind(driver_user_id)
+        .fetch_optional(pool)
+        .await?
+        .map(Ride::from);
+
+    if let Some(active_ride) = ride.as_ref() {
+        if matches!(active_ride.status.as_str(), "inProgress" | "overtime") {
+            sync_ride_runtime(pool, active_ride.id, active_ride.user_id).await?;
+            let refreshed_query = format!("{RIDE_SELECT} WHERE r.id = $1");
+            ride = sqlx::query_as::<_, RideRow>(&refreshed_query)
+                .bind(active_ride.id)
+                .fetch_optional(pool)
+                .await?
+                .map(Ride::from);
+        }
+    }
+
+    let Some(ride) = ride else {
+        return Ok(None);
+    };
+
+    let company_name = match ride.company_id {
+        Some(company_id) => {
+            sqlx::query_as::<_, (String,)>("SELECT nom_entreprise FROM partenaires WHERE id = $1")
+                .bind(company_id)
+                .fetch_optional(pool)
+                .await?
+                .map(|row| row.0)
+                .unwrap_or_else(|| "Partenaire Drift".to_string())
+        }
+        None => "Drift".to_string(),
+    };
+
+    let vehicle = match ride.vehicle_id {
+        Some(vehicle_id) => fetch_company_vehicle_by_id(pool, vehicle_id).await?,
+        None => None,
+    };
+
+    Ok(Some(DriverMission {
+        ride,
+        company_name,
+        vehicle,
+    }))
+}
+
+pub async fn assign_driver_to_booking(
+    pool: &PgPool,
+    company_id: Uuid,
+    ride_id: Uuid,
+    requested_driver_id: Uuid,
+    requested_vehicle_id: Option<Uuid>,
+) -> Result<DriverMission, AppError> {
+    let mut tx = pool.begin().await?;
+
+    let ride = sqlx::query_as::<
+        _,
+        (
+            Option<Uuid>,
+            Option<Uuid>,
+            String,
+            String,
+            Option<chrono::DateTime<Utc>>,
+            i32,
+            i32,
+        ),
+    >(
+        "SELECT company_id, vehicle_id, status, ride_type, scheduled_start,
+                passenger_count, requested_duration_minutes
+         FROM rides
+         WHERE id = $1
+         FOR UPDATE",
+    )
+    .bind(ride_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    if ride.0 != Some(company_id) {
+        return Err(AppError::Unauthorized);
+    }
+    if ride.3 == "withoutDriver" {
+        return Err(AppError::Conflict(
+            "A self-drive booking cannot receive a driver".to_string(),
+        ));
+    }
+    if matches!(ride.2.as_str(), "completed" | "cancelled" | "restricted") {
+        return Err(AppError::Conflict(
+            "This transport booking is no longer assignable".to_string(),
+        ));
+    }
+
+    let company_driver = sqlx::query_as::<_, (Uuid, Option<Uuid>, Option<Uuid>)>(
+        "SELECT cd.user_id, cd.driver_profile_id, cd.default_vehicle_id
+         FROM company_drivers cd
+         INNER JOIN users u ON u.id = cd.user_id
+         WHERE cd.company_id = $1
+           AND cd.is_active = TRUE
+           AND u.role = 'driver'
+           AND (cd.id = $2 OR cd.user_id = $2)
+         FOR UPDATE OF cd",
+    )
+    .bind(company_id)
+    .bind(requested_driver_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| {
+        AppError::Conflict("The selected driver is not active in this company".to_string())
+    })?;
+
+    let already_assigned = sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (
+            SELECT 1
+            FROM rides
+            WHERE assigned_driver_user_id = $1
+              AND id <> $2
+              AND status IN ('requested', 'accepted', 'scheduled', 'inProgress', 'overtime', 'arrived')
+        )",
+    )
+    .bind(company_driver.0)
+    .bind(ride_id)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    if already_assigned {
+        return Err(AppError::Conflict(
+            "The selected driver already has an active mission".to_string(),
+        ));
+    }
+
+    let vehicle_id = requested_vehicle_id
+        .or(ride.1)
+        .or(company_driver.2)
+        .ok_or_else(|| {
+            AppError::BadRequest("vehicleId is required for driver assignment".to_string())
+        })?;
+
+    if ride
+        .1
+        .is_some_and(|reserved_vehicle| reserved_vehicle != vehicle_id)
+    {
+        return Err(AppError::Conflict(
+            "This booking already reserves another company vehicle".to_string(),
+        ));
+    }
+
+    let vehicle = sqlx::query_as::<_, (bool, String, i32, String, f64)>(
+        "SELECT is_available, operational_status, capacity, vehicle_type,
+                hourly_rate::DOUBLE PRECISION AS hourly_rate
+         FROM company_vehicles
+         WHERE id = $1 AND company_id = $2
+         FOR UPDATE",
+    )
+    .bind(vehicle_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| {
+        AppError::Conflict("The selected vehicle does not belong to this company".to_string())
+    })?;
+
+    let can_use_reserved_vehicle = ride.1 == Some(vehicle_id) && vehicle.1 == "reserved";
+    if !vehicle.0 || (!can_use_reserved_vehicle && vehicle.1 != "available") {
+        return Err(AppError::Conflict(
+            "The selected vehicle is not operationally available".to_string(),
+        ));
+    }
+    if vehicle.2 < ride.5 {
+        return Err(AppError::Conflict(format!(
+            "The selected vehicle can only handle {} passenger(s)",
+            vehicle.2
+        )));
+    }
+
+    let next_status = if ride
+        .4
+        .is_some_and(|scheduled_start| scheduled_start > Utc::now())
+    {
+        "scheduled"
+    } else {
+        "accepted"
+    };
+
+    sqlx::query(
+        "UPDATE rides
+         SET driver_id = $1,
+             assigned_driver_user_id = $2,
+             vehicle_id = $3,
+             status = $4,
+             vehicle_type = $5,
+             seat_capacity = $6,
+             hourly_rate = $7,
+             estimated_price = CEIL(($8::DOUBLE PRECISION / 60.0) * $7),
+             final_amount = CEIL(($8::DOUBLE PRECISION / 60.0) * $7),
+             assigned_at = now(),
+             updated_at = now()
+         WHERE id = $9",
+    )
+    .bind(company_driver.1)
+    .bind(company_driver.0)
+    .bind(vehicle_id)
+    .bind(next_status)
+    .bind(normalize_vehicle_type(&vehicle.3))
+    .bind(vehicle.2)
+    .bind(vehicle.4.max(0.0))
+    .bind(ride.6.max(30))
+    .bind(ride_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE company_vehicles
+         SET operational_status = 'reserved', updated_at = now()
+         WHERE id = $1",
+    )
+    .bind(vehicle_id)
+    .execute(&mut *tx)
+    .await?;
+
+    if let Some(driver_profile_id) = company_driver.1 {
+        sqlx::query("UPDATE drivers SET status = 'busy' WHERE id = $1")
+            .bind(driver_profile_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+
+    get_active_driver_mission(pool, company_driver.0)
+        .await?
+        .ok_or(AppError::NotFound)
+}
+
+pub async fn update_driver_mission_status(
+    pool: &PgPool,
+    driver_user_id: Uuid,
+    ride_id: Uuid,
+    action: &str,
+) -> Result<DriverMission, AppError> {
+    let mut tx = pool.begin().await?;
+    let mission = sqlx::query_as::<_, (String, Option<Uuid>, Option<Uuid>)>(
+        "SELECT status, vehicle_id, driver_id
+         FROM rides
+         WHERE id = $1 AND assigned_driver_user_id = $2
+         FOR UPDATE",
+    )
+    .bind(ride_id)
+    .bind(driver_user_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    match action.trim().to_ascii_lowercase().as_str() {
+        "start" => {
+            if !matches!(mission.0.as_str(), "requested" | "accepted" | "scheduled") {
+                return Err(AppError::Conflict(
+                    "This mission cannot be started from its current status".to_string(),
+                ));
+            }
+            sqlx::query(
+                "UPDATE rides
+                 SET status = 'inProgress',
+                     started_at = COALESCE(started_at, now()),
+                     updated_at = now()
+                 WHERE id = $1",
+            )
+            .bind(ride_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+        "arrived" => {
+            if !matches!(mission.0.as_str(), "inProgress" | "overtime") {
+                return Err(AppError::Conflict(
+                    "This mission must be started before arrival".to_string(),
+                ));
+            }
+            sqlx::query(
+                "UPDATE rides
+                 SET status = 'arrived',
+                     arrived_at = COALESCE(arrived_at, now()),
+                     updated_at = now()
+                 WHERE id = $1",
+            )
+            .bind(ride_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+        _ => {
+            return Err(AppError::BadRequest(
+                "action must be start or arrived".to_string(),
+            ));
+        }
+    }
+
+    if let Some(vehicle_id) = mission.1 {
+        sqlx::query(
+            "UPDATE company_vehicles
+             SET operational_status = 'busy', updated_at = now()
+             WHERE id = $1",
+        )
+        .bind(vehicle_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    if let Some(driver_profile_id) = mission.2 {
+        sqlx::query("UPDATE drivers SET status = 'busy' WHERE id = $1")
+            .bind(driver_profile_id)
+            .execute(&mut *tx)
+            .await?;
+    }
+
+    tx.commit().await?;
+    get_active_driver_mission(pool, driver_user_id)
+        .await?
+        .ok_or(AppError::NotFound)
+}
+
 pub async fn create_ride_session(
     pool: &PgPool,
     user_id: Uuid,
     request: &CreateRideRequest,
 ) -> Result<Ride, AppError> {
-    let terms = build_pricing_terms(request);
+    let mut terms = build_pricing_terms(request);
     let requested_duration_minutes = request.requested_duration_minutes.max(30);
     let estimated_time_text = request
         .estimated_time_text
@@ -1314,21 +2029,101 @@ pub async fn create_ride_session(
         None
     };
     let now = Utc::now();
-    let has_assigned_driver = request.driver_id.is_some();
-    let initial_status = if !has_assigned_driver {
+    let mut resolved_company_id = request.company_id;
+    let resolved_vehicle_id = request.vehicle_id;
+    let has_operational_assignment = request.driver_id.is_some()
+        || (terms.ride_type == "withoutDriver" && resolved_vehicle_id.is_some());
+    let initial_status = if !has_operational_assignment {
         "requested".to_string()
     } else if scheduled_start.map(|start| start > now).unwrap_or(false) {
         "scheduled".to_string()
     } else {
         "accepted".to_string()
     };
-    let started_at = if initial_status == "scheduled" {
-        scheduled_start
+    let started_at = if request.driver_id.is_some() {
+        Some(scheduled_start.unwrap_or(now))
     } else {
-        Some(now)
+        None
     };
 
     let mut tx = pool.begin().await?;
+
+    if terms.ride_type == "withoutDriver" {
+        ensure_self_drive_eligible_tx(&mut tx, user_id).await?;
+    }
+
+    if let Some(company_id) = resolved_company_id {
+        let is_transport_company = sqlx::query_scalar::<_, bool>(
+            "SELECT EXISTS (
+                SELECT 1 FROM partenaires
+                WHERE id = $1 AND type_partenaire = 'transport'
+            )",
+        )
+        .bind(company_id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if !is_transport_company {
+            return Err(AppError::Conflict(
+                "The selected company is not a transport partner".to_string(),
+            ));
+        }
+    }
+
+    if let Some(vehicle_id) = resolved_vehicle_id {
+        let vehicle = sqlx::query_as::<_, (Uuid, String, i32, f64, bool, String)>(
+            "SELECT company_id, vehicle_type, capacity,
+                    hourly_rate::DOUBLE PRECISION AS hourly_rate,
+                    is_available, operational_status
+             FROM company_vehicles
+             WHERE id = $1
+             FOR UPDATE",
+        )
+        .bind(vehicle_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or(AppError::NotFound)?;
+
+        if resolved_company_id.is_some_and(|company_id| company_id != vehicle.0) {
+            return Err(AppError::Conflict(
+                "The selected vehicle does not belong to this company".to_string(),
+            ));
+        }
+        resolved_company_id = Some(vehicle.0);
+
+        if !vehicle.4 || vehicle.5 != "available" {
+            return Err(AppError::Conflict(
+                "The selected company vehicle is no longer available".to_string(),
+            ));
+        }
+        if vehicle.2 < request.passenger_count {
+            return Err(AppError::Conflict(format!(
+                "The selected vehicle can only handle {} passenger(s)",
+                vehicle.2
+            )));
+        }
+
+        terms.vehicle_type = normalize_vehicle_type(&vehicle.1);
+        terms.seat_capacity = vehicle.2;
+        terms.hourly_rate = vehicle.3.max(0.0);
+        terms.estimated_price =
+            ((requested_duration_minutes as f64 / 60.0) * terms.hourly_rate).ceil();
+
+        let reserved = sqlx::query(
+            "UPDATE company_vehicles
+             SET operational_status = 'reserved', updated_at = now()
+             WHERE id = $1
+               AND is_available = TRUE
+               AND operational_status = 'available'",
+        )
+        .bind(vehicle_id)
+        .execute(&mut *tx)
+        .await?;
+        if reserved.rows_affected() != 1 {
+            return Err(AppError::Conflict(
+                "The selected company vehicle was reserved concurrently".to_string(),
+            ));
+        }
+    }
 
     if let Some(driver_id) = request.driver_id {
         let locked_driver = sqlx::query_as::<_, (String, i32, String)>(
@@ -1381,23 +2176,29 @@ pub async fn create_ride_session(
 
     let ride_id = sqlx::query_as::<_, (Uuid,)>(
         "INSERT INTO rides (
-            user_id, driver_id, origin, destination, pickup_location, destination_location,
+            user_id, company_id, vehicle_id, driver_id,
+            origin, destination, pickup_location, destination_location,
             ride_type, schedule_type, scheduled_start, group_context, passenger_count,
             requested_duration_minutes, vehicle_type, seat_capacity, estimated_price,
             hourly_rate, estimated_time_text, status, overtime_minutes, overtime_amount,
             final_amount, payment_status, penalty_amount, restriction_reason,
-            auto_charge_attempted_at, created_at, started_at, completed_at, updated_at
+            auto_charge_attempted_at, created_at, started_at, completed_at, updated_at,
+            pack_timeline
          ) VALUES (
-            $1, $2, $3, $4, $5, $6,
-            $7, $8, $9, $10, $11,
-            $12, $13, $14, $15,
-            $16, $17, $18, 0, 0,
-            $19, 'included', 0, NULL,
-            NULL, now(), $20, NULL, now()
+            $1, $2, $3, $4,
+            $5, $6, $7, $8,
+            $9, $10, $11, $12, $13,
+            $14, $15, $16, $17,
+            $18, $19, $20, 0, 0,
+            $21, 'included', 0, NULL,
+            NULL, now(), $22, NULL, now(),
+            $23
          )
          RETURNING id",
     )
     .bind(user_id)
+    .bind(resolved_company_id)
+    .bind(resolved_vehicle_id)
     .bind(request.driver_id)
     .bind(request.pickup_location.address.clone())
     .bind(request.destination_location.address.clone())
@@ -1417,6 +2218,12 @@ pub async fn create_ride_session(
     .bind(initial_status)
     .bind(terms.estimated_price)
     .bind(started_at)
+    .bind(Json(
+        request
+            .pack_timeline
+            .clone()
+            .unwrap_or_else(|| Value::Array(Vec::new())),
+    ))
     .fetch_one(&mut *tx)
     .await?
     .0;
@@ -1435,6 +2242,8 @@ pub async fn create_legacy_ride(
     destination: &str,
 ) -> Result<Ride, AppError> {
     let request = CreateRideRequest {
+        company_id: None,
+        vehicle_id: None,
         driver_id: None,
         pickup_location: default_location(origin),
         destination_location: default_location(destination),
@@ -1448,6 +2257,7 @@ pub async fn create_legacy_ride(
         seat_capacity: Some(4),
         quoted_price: DEFAULT_HOURLY_RATE,
         estimated_time_text: Some("1h".to_string()),
+        pack_timeline: None,
     };
 
     create_ride_session(pool, user_id, &request).await
@@ -1460,7 +2270,7 @@ pub async fn cancel_ride(
 ) -> Result<Option<Ride>, sqlx::Error> {
     let mut tx = pool.begin().await?;
 
-    let row = sqlx::query_as::<_, (Option<Uuid>,)>(
+    let row = sqlx::query_as::<_, (Option<Uuid>, Option<Uuid>)>(
         "UPDATE rides
          SET status = 'cancelled',
              completed_at = COALESCE(completed_at, now()),
@@ -1468,14 +2278,14 @@ pub async fn cancel_ride(
          WHERE id = $1
            AND user_id = $2
            AND status NOT IN ('cancelled', 'completed', 'restricted')
-         RETURNING driver_id",
+         RETURNING driver_id, vehicle_id",
     )
     .bind(ride_id)
     .bind(user_id)
     .fetch_optional(&mut *tx)
     .await?;
 
-    let Some((driver_id,)) = row else {
+    let Some((driver_id, vehicle_id)) = row else {
         tx.rollback().await?;
         return Ok(None);
     };
@@ -1485,6 +2295,17 @@ pub async fn cancel_ride(
             .bind(driver_id)
             .execute(&mut *tx)
             .await?;
+    }
+
+    if let Some(vehicle_id) = vehicle_id {
+        sqlx::query(
+            "UPDATE company_vehicles
+             SET operational_status = 'available', updated_at = now()
+             WHERE id = $1 AND operational_status <> 'maintenance'",
+        )
+        .bind(vehicle_id)
+        .execute(&mut *tx)
+        .await?;
     }
 
     tx.commit().await?;
@@ -1500,7 +2321,7 @@ pub async fn complete_ride(
     sync_ride_runtime_tx(&mut tx, ride_id, user_id).await?;
 
     let financial = sqlx::query_as::<_, RideFinancialRow>(
-        "SELECT driver_id, estimated_price, overtime_amount, penalty_amount
+        "SELECT driver_id, vehicle_id, estimated_price, overtime_amount, penalty_amount
          FROM rides
          WHERE id = $1 AND user_id = $2
          FOR UPDATE",
@@ -1635,6 +2456,17 @@ pub async fn complete_ride(
             .bind(driver_id)
             .execute(&mut *tx)
             .await?;
+    }
+
+    if let Some(vehicle_id) = financial.vehicle_id {
+        sqlx::query(
+            "UPDATE company_vehicles
+             SET operational_status = 'available', updated_at = now()
+             WHERE id = $1 AND operational_status <> 'maintenance'",
+        )
+        .bind(vehicle_id)
+        .execute(&mut *tx)
+        .await?;
     }
 
     tx.commit().await?;

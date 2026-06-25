@@ -9,6 +9,7 @@ import '../models/ride_option_model.dart';
 import '../models/ride_request_details.dart';
 import '../services/driver_availability_service.dart';
 import '../theme/app_colors.dart';
+import '../widgets/driving_license_verification_sheet.dart';
 import '../widgets/ride_request_qualification_dialog.dart';
 
 class DriverAvailabilityScreen extends StatefulWidget {
@@ -39,7 +40,11 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
   void initState() {
     super.initState();
     _driverService = DriverAvailabilityService();
-    _searchNearbyDrivers();
+    if (widget.selectedOption.type == RideType.withoutDriver) {
+      _isLoading = false;
+    } else {
+      _searchNearbyDrivers();
+    }
   }
 
   Future<void> _searchNearbyDrivers() async {
@@ -69,7 +74,8 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
   }
 
   Future<void> _confirmRide() async {
-    if (_selectedDriver == null) {
+    final isSelfDrive = widget.selectedOption.type == RideType.withoutDriver;
+    if (!isSelfDrive && _selectedDriver == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Veuillez selectionner un chauffeur')),
       );
@@ -85,8 +91,14 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
 
     if (!mounted || request == null) return;
 
-    final resolvedDriver = _resolveDriverForRequest(request);
-    if (resolvedDriver == null) {
+    if (isSelfDrive) {
+      final verified = await ensureSelfDriveVerification(context);
+      if (!verified || !mounted) return;
+    }
+
+    final resolvedDriver =
+        isSelfDrive ? null : _resolveDriverForRequest(request);
+    if (!isSelfDrive && resolvedDriver == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -103,13 +115,17 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
 
     try {
       final rideController = context.read<RideStateController>();
-      final ride = await rideController.createRideSession(
-        driver: resolvedDriver,
-        request: request,
-      );
+      final ride = isSelfDrive
+          ? await rideController.createSelfDriveSession(request: request)
+          : await rideController.createRideSession(
+              driver: resolvedDriver!,
+              request: request,
+            );
 
       if (!mounted) return;
-      setState(() => _selectedDriver = resolvedDriver);
+      if (resolvedDriver != null) {
+        setState(() => _selectedDriver = resolvedDriver);
+      }
 
       final shouldCancel = await showRideCreatedDialog(
         context: context,
@@ -194,7 +210,9 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          'Chauffeurs disponibles',
+          widget.selectedOption.type == RideType.withoutDriver
+              ? 'Location sans chauffeur'
+              : 'Chauffeurs disponibles',
           style: GoogleFonts.poppins(
             fontSize: 18,
             fontWeight: FontWeight.bold,
@@ -209,260 +227,333 @@ class _DriverAvailabilityScreenState extends State<DriverAvailabilityScreen> {
                 color: Color(0xFF1E90FF),
               ),
             )
-          : _nearbyDrivers.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.directions_car,
-                        size: 64,
-                        color: Colors.grey[300],
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Aucun chauffeur disponible',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Veuillez reessayer dans quelques instants',
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: Colors.grey[500],
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildOrderSummary(),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Chauffeurs a proximite (${_nearbyDrivers.length})',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ..._nearbyDrivers.asMap().entries.map((entry) {
-                        final driver = entry.value;
-                        final isSelected = _selectedDriver?.id == driver.id;
-
-                        return GestureDetector(
-                          onTap: () => setState(() => _selectedDriver = driver),
-                          child: Container(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: isSelected
-                                    ? const Color(0xFF1E90FF)
-                                    : Colors.grey[300]!,
-                                width: isSelected ? 2 : 1,
-                              ),
-                              borderRadius: BorderRadius.circular(12),
-                              color: isSelected
-                                  ? const Color(0xFF1E90FF)
-                                      .withValues(alpha: 0.05)
-                                  : Colors.white,
+          : widget.selectedOption.type == RideType.withoutDriver
+              ? _buildSelfDriveBody()
+              : _nearbyDrivers.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.directions_car,
+                            size: 64,
+                            color: Colors.grey[300],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Aucun chauffeur disponible',
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[600],
                             ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Veuillez reessayer dans quelques instants',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: Colors.grey[500],
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : SingleChildScrollView(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildOrderSummary(),
+                          const SizedBox(height: 24),
+                          Text(
+                            'Chauffeurs a proximite (${_nearbyDrivers.length})',
+                            style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ..._nearbyDrivers.asMap().entries.map((entry) {
+                            final driver = entry.value;
+                            final isSelected = _selectedDriver?.id == driver.id;
+
+                            return GestureDetector(
+                              onTap: () =>
+                                  setState(() => _selectedDriver = driver),
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? const Color(0xFF1E90FF)
+                                        : Colors.grey[300]!,
+                                    width: isSelected ? 2 : 1,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                  color: isSelected
+                                      ? const Color(0xFF1E90FF)
+                                          .withValues(alpha: 0.05)
+                                      : Colors.white,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            driver.name,
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.black87,
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                driver.name,
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 14,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.black87,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Row(
+                                                children: [
+                                                  Icon(
+                                                    Icons.star,
+                                                    size: 14,
+                                                    color: Colors.amber[600],
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    '${driver.rating} (${driver.reviewCount} avis)',
+                                                    style: GoogleFonts.poppins(
+                                                      fontSize: 12,
+                                                      color: Colors.grey[600],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green
+                                                .withValues(alpha: 0.15),
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                            border: Border.all(
+                                              color: Colors.green
+                                                  .withValues(alpha: 0.3),
                                             ),
                                           ),
-                                          const SizedBox(height: 4),
-                                          Row(
+                                          child: Row(
                                             children: [
                                               Icon(
-                                                Icons.star,
+                                                Icons.schedule,
                                                 size: 14,
-                                                color: Colors.amber[600],
+                                                color: Colors.green[600],
                                               ),
                                               const SizedBox(width: 4),
                                               Text(
-                                                '${driver.rating} (${driver.reviewCount} avis)',
+                                                '${driver.eta} min',
                                                 style: GoogleFonts.poppins(
                                                   fontSize: 12,
-                                                  color: Colors.grey[600],
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.green[600],
                                                 ),
                                               ),
                                             ],
                                           ),
-                                        ],
-                                      ),
-                                    ),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.green
-                                            .withValues(alpha: 0.15),
-                                        borderRadius: BorderRadius.circular(20),
-                                        border: Border.all(
-                                          color: Colors.green
-                                              .withValues(alpha: 0.3),
                                         ),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            Icons.schedule,
-                                            size: 14,
-                                            color: Colors.green[600],
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            '${driver.eta} min',
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
-                                              color: Colors.green[600],
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.directions_car,
-                                      size: 18,
-                                      color: Colors.grey[600],
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        '${driver.vehicleColor} - ${driver.licensePlate}',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 12,
+                                    const SizedBox(height: 12),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.directions_car,
+                                          size: 18,
                                           color: Colors.grey[600],
                                         ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    Icon(
-                                      Icons.phone,
-                                      size: 18,
-                                      color: Colors.grey[600],
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      driver.phoneNumber,
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 12,
-                                        color: Colors.grey[600],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                if (isSelected) ...[
-                                  const SizedBox(height: 12),
-                                  Container(
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 8,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF1E90FF)
-                                          .withValues(alpha: 0.1),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        const Icon(
-                                          Icons.check_circle,
-                                          color: Color(0xFF1E90FF),
-                                        ),
                                         const SizedBox(width: 8),
-                                        Text(
-                                          'Selectionne',
-                                          style: GoogleFonts.poppins(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: const Color(0xFF1E90FF),
+                                        Expanded(
+                                          child: Text(
+                                            '${driver.vehicleColor} - ${driver.licensePlate}',
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 12,
+                                              color: Colors.grey[600],
+                                            ),
                                           ),
                                         ),
                                       ],
                                     ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        );
-                      }),
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: _isSubmitting ? null : _confirmRide,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1E90FF),
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: _isSubmitting
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.2,
-                                  ),
-                                )
-                              : Text(
-                                  'Confirmer le trajet',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.phone,
+                                          size: 18,
+                                          color: Colors.grey[600],
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          driver.phoneNumber,
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (isSelected) ...[
+                                      const SizedBox(height: 12),
+                                      Container(
+                                        width: double.infinity,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 8,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF1E90FF)
+                                              .withValues(alpha: 0.1),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            const Icon(
+                                              Icons.check_circle,
+                                              color: Color(0xFF1E90FF),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              'Selectionne',
+                                              style: GoogleFonts.poppins(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                                color: const Color(0xFF1E90FF),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
-                        ),
+                              ),
+                            );
+                          }),
+                          const SizedBox(height: 24),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: _isSubmitting ? null : _confirmRide,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1E90FF),
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              child: _isSubmitting
+                                  ? const SizedBox(
+                                      width: 22,
+                                      height: 22,
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2.2,
+                                      ),
+                                    )
+                                  : Text(
+                                      'Confirmer le trajet',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+    );
+  }
+
+  Widget _buildSelfDriveBody() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildOrderSummary(),
+          const SizedBox(height: 20),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: AppColors.orange.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: AppColors.orange.withValues(alpha: 0.28),
+              ),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.verified_user_outlined, color: AppColors.orange),
+                SizedBox(height: 10),
+                Text(
+                  'Verification obligatoire',
+                  style: TextStyle(fontWeight: FontWeight.w800),
                 ),
+                SizedBox(height: 6),
+                Text(
+                  'Votre permis et vos documents d’identite doivent etre verifies avant la remise du vehicule.',
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _isSubmitting ? null : _confirmRide,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.orange,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: _isSubmitting
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2.2,
+                      ),
+                    )
+                  : const Text(
+                      'Verifier mes documents et continuer',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

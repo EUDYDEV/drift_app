@@ -21,14 +21,14 @@ class DriverAvailabilityService extends ChangeNotifier {
     required AppLocation location,
     required double radiusKm,
   }) async {
-    final _ = location;
-    final __ = radiusKm;
+    final _ = (location, radiusKm);
     _isSearching = true;
     _error = null;
     notifyListeners();
 
     try {
-      final response = await ApiService.authenticatedGet('/rides/nearby-drivers');
+      final response =
+          await ApiService.authenticatedGet('/rides/nearby-drivers');
 
       if (response.statusCode != 200) {
         throw Exception(_extractError(
@@ -78,9 +78,36 @@ class DriverAvailabilityService extends ChangeNotifier {
 
     final decoded = jsonDecode(response.body);
     if (decoded is! Map<String, dynamic>) {
-      throw const FormatException('La reponse de creation de course est invalide.');
+      throw const FormatException(
+          'La reponse de creation de course est invalide.');
     }
 
+    return Ride.fromJson(decoded);
+  }
+
+  Future<Ride> createRideWithoutDriver({
+    required RideRequestDetails request,
+  }) async {
+    final response = await ApiService.authenticatedPost(
+      '/rides',
+      request.toJson(),
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw StateError('Session utilisateur introuvable.');
+    }
+    if (response.statusCode != 201) {
+      throw Exception(_extractError(
+        response.body,
+        fallback: 'La location sans chauffeur n’a pas pu etre creee.',
+      ));
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException(
+        'La reponse de location sans chauffeur est invalide.',
+      );
+    }
     return Ride.fromJson(decoded);
   }
 

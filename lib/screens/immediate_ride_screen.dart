@@ -296,7 +296,9 @@ class _ImmediateRideScreenState extends State<ImmediateRideScreen> {
                         ),
                       ),
                       child: Text(
-                        'Rechercher un chauffeur',
+                        _selectedOption?.type == RideType.withoutDriver
+                            ? 'Continuer sans chauffeur'
+                            : 'Rechercher un chauffeur',
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,

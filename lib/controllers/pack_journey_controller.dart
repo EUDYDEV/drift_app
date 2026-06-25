@@ -574,6 +574,13 @@ class PackJourneyController extends ChangeNotifier {
               PackTimelineCategory.meal => 'restaurant',
               _ => 'activity',
             },
+            serviceType: switch (item.category) {
+              PackTimelineCategory.transport => 'location_voiture',
+              PackTimelineCategory.accommodation => 'chambre_hotel',
+              PackTimelineCategory.meal => 'table_resto',
+              PackTimelineCategory.activity => 'ticket_jeu',
+              PackTimelineCategory.meeting => 'ticket_jeu',
+            },
             name: item.title,
             subtitle: 'Jour ${item.day} · ${item.timeLabel} · ${item.track}',
             priceDisplay: CartModel.formatCurrency(item.price),
@@ -588,6 +595,23 @@ class PackJourneyController extends ChangeNotifier {
               'track': item.track,
               'hiddenFromCompanion': item.hiddenFromCompanion,
               'mandatory': item.mandatory,
+              'withoutDriver':
+                  item.category == PackTimelineCategory.transport &&
+                      withoutDriver,
+              'rideType': withoutDriver ? 'withoutDriver' : 'withDriver',
+              if (item.category == PackTimelineCategory.transport)
+                'packTimeline': currentPlan.items
+                    .map(
+                      (timelineItem) => <String, dynamic>{
+                        'day': timelineItem.day,
+                        'time': timelineItem.timeLabel,
+                        'title': timelineItem.title,
+                        'subtitle': timelineItem.subtitle,
+                        'track': timelineItem.track,
+                        'category': timelineItem.category.name,
+                      },
+                    )
+                    .toList(growable: false),
             },
           ),
         )

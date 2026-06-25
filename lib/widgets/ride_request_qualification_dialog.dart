@@ -51,6 +51,7 @@ Future<RideRequestDetails?> showRideQualificationDialog({
               );
 
               if (date == null) return;
+              if (!dialogContext.mounted) return;
 
               final time = await showTimePicker(
                 context: dialogContext,
@@ -58,6 +59,7 @@ Future<RideRequestDetails?> showRideQualificationDialog({
               );
 
               if (time == null) return;
+              if (!dialogContext.mounted) return;
 
               setDialogState(() {
                 scheduledStart = DateTime(
@@ -74,8 +76,7 @@ Future<RideRequestDetails?> showRideQualificationDialog({
             void submit() {
               final safePassengerCount =
                   int.tryParse(passengerController.text.trim());
-              final safeDuration =
-                  int.tryParse(durationController.text.trim());
+              final safeDuration = int.tryParse(durationController.text.trim());
 
               if (safePassengerCount == null || safePassengerCount < 1) {
                 setDialogState(() {
@@ -203,7 +204,8 @@ Future<RideRequestDetails?> showRideQualificationDialog({
                     TextField(
                       controller: passengerController,
                       keyboardType: TextInputType.number,
-                      onChanged: (_) => setDialogState(() => validationError = null),
+                      onChanged: (_) =>
+                          setDialogState(() => validationError = null),
                       decoration: const InputDecoration(
                         labelText: 'Nombre de passagers',
                         border: OutlineInputBorder(),
@@ -213,7 +215,8 @@ Future<RideRequestDetails?> showRideQualificationDialog({
                     TextField(
                       controller: durationController,
                       keyboardType: TextInputType.number,
-                      onChanged: (_) => setDialogState(() => validationError = null),
+                      onChanged: (_) =>
+                          setDialogState(() => validationError = null),
                       decoration: const InputDecoration(
                         labelText: 'Duree reservee (minutes)',
                         border: OutlineInputBorder(),
@@ -376,6 +379,8 @@ String _statusLabel(RideStatus status) {
       return 'En cours';
     case RideStatus.overtime:
       return 'Overtime';
+    case RideStatus.arrived:
+      return 'Chauffeur arrive';
     case RideStatus.completed:
       return 'Terminee';
     case RideStatus.cancelled:

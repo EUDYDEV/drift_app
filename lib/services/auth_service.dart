@@ -16,25 +16,36 @@ class AuthService extends ChangeNotifier {
   static String get _baseUrl => ApiConfig.baseUrl;
 
   String? _token;
+  String _userId = '';
   String _userName = '';
   String _userEmail = '';
+  String _userRole = 'client';
   bool _isVip = false;
+  bool _identityDocumentsVerified = false;
+  String _drivingLicenseStatus = 'missing';
   bool _sessionValidated = false;
-  bool _initialized = false;
+  Future<void>? _initialization;
 
   bool get isAuthenticated => _token != null && _sessionValidated;
+  String get userId => _userId;
   String get userName => _userName;
   String get userEmail => _userEmail;
+  String get userRole => _userRole;
+  bool get isDriver => isAuthenticated && _userRole == 'driver';
   bool get isVip => isAuthenticated && _isVip;
+  bool get identityDocumentsVerified =>
+      isAuthenticated && _identityDocumentsVerified;
+  String get drivingLicenseStatus => _drivingLicenseStatus;
 
   static Future<String?> readToken() async {
     return _storage.read(key: _tokenKey);
   }
 
   Future<void> initialize() async {
-    if (_initialized) return;
-    _initialized = true;
+    return _initialization ??= _initialize();
+  }
 
+  Future<void> _initialize() async {
     _token = await readToken();
     _sessionValidated = false;
     if (_token != null) {
@@ -129,8 +140,17 @@ class AuthService extends ChangeNotifier {
     return {
       'email': _userEmail,
       'fullName': _userName,
+      'role': _userRole,
       'isVip': _isVip,
+      'identityDocumentsVerified': _identityDocumentsVerified,
+      'drivingLicenseStatus': _drivingLicenseStatus,
     };
+  }
+
+  Future<bool> refreshProfile() async {
+    final refreshed = await _refreshProfile(clearTokenOnUnauthorized: true);
+    notifyListeners();
+    return refreshed;
   }
 
   Future<void> logout() async {
@@ -226,17 +246,34 @@ class AuthService extends ChangeNotifier {
     String fallbackEmail = '',
   }) {
     final data = userJson ?? const <String, dynamic>{};
+    _userId = _stringValue(data, 'id') ?? _userId;
     _userName = _stringValue(data, 'fullName', 'full_name') ?? fallbackName;
     _userEmail = _stringValue(data, 'email') ?? fallbackEmail;
+    _userRole = _stringValue(data, 'role') ?? 'client';
     _isVip = _boolValue(data, 'isVip', 'is_vip');
+    _identityDocumentsVerified = _boolValue(
+      data,
+      'identityDocumentsVerified',
+      'identity_documents_verified',
+    );
+    _drivingLicenseStatus = _stringValue(
+          data,
+          'drivingLicenseStatus',
+          'driving_license_status',
+        ) ??
+        'missing';
   }
 
   Future<void> _clearSession({bool notify = true}) async {
     _token = null;
     _sessionValidated = false;
+    _userId = '';
     _userName = '';
     _userEmail = '';
+    _userRole = 'client';
     _isVip = false;
+    _identityDocumentsVerified = false;
+    _drivingLicenseStatus = 'missing';
     await _storage.delete(key: _tokenKey);
     if (notify) {
       notifyListeners();

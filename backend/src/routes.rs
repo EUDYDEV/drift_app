@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, Query, State},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::StatusCode,
     routing::{get, post, put},
     Json, Router,
@@ -13,12 +13,14 @@ use crate::{
     auth, db,
     error::AppError,
     models::{
-        AuthResponse, CreatePrestationRequest, CreateRideRequest, CreateVoyageRequest, Driver,
-        ForgotPasswordRequest, Hotel, IssuePackTicketsRequest, IssuePackTicketsResponse,
-        LoginRequest, MessageResponse, PackTicket, Partner, PartnerAuthResponse,
-        PartnerCatalogPrestation, PartnerLoginRequest, PartnerRegisterRequest, Prestation,
-        RegisterRequest, RequestRideRequest, Reservation, ReservationRequest, Ride,
-        RideSettlementResponse, Room, User, Voyage,
+        AssignDriverRequest, AuthResponse, CompanyDriver, CompanyVehicle,
+        CreateCompanyVehicleRequest, CreatePrestationRequest, CreateRideRequest,
+        CreateVoyageRequest, Driver, DriverMission, ForgotPasswordRequest, Hotel,
+        IssuePackTicketsRequest, IssuePackTicketsResponse, LinkCompanyDriverRequest, LoginRequest,
+        MessageResponse, PackTicket, Partner, PartnerAuthResponse, PartnerCatalogPrestation,
+        PartnerLoginRequest, PartnerRegisterRequest, Prestation, RegisterRequest,
+        RequestRideRequest, Reservation, ReservationRequest, Ride, RideSettlementResponse, Room,
+        UpdateDriverMissionStatusRequest, User, Voyage,
     },
 };
 
@@ -41,6 +43,10 @@ pub fn auth_routes() -> Router<PgPool> {
         .route("/me", get(me))
         .route("/profile", get(me))
         .route("/forgot-password", post(forgot_password))
+        .route(
+            "/documents/driving-license",
+            post(upload_driving_license).layer(DefaultBodyLimit::max(10 * 1024 * 1024)),
+        )
 }
 
 pub fn partner_routes() -> Router<PgPool> {
@@ -60,6 +66,25 @@ pub fn partner_routes() -> Router<PgPool> {
             "/v1/prestations/:id/toggle-availability",
             put(toggle_prestation_availability),
         )
+}
+
+pub fn partner_fleet_routes() -> Router<PgPool> {
+    Router::new()
+        .route("/fleet/vehicles", post(create_company_vehicle))
+        .route(
+            "/drivers",
+            get(list_company_drivers).post(link_company_driver),
+        )
+        .route(
+            "/bookings/:id/assign-driver",
+            post(assign_driver_to_booking),
+        )
+}
+
+pub fn driver_mission_routes() -> Router<PgPool> {
+    Router::new()
+        .route("/missions/active", get(get_active_driver_mission))
+        .route("/missions/:id/status", post(update_driver_mission_status))
 }
 
 pub fn pack_routes() -> Router<PgPool> {
@@ -119,6 +144,84 @@ pub async fn forgot_password(
     Ok(Json(MessageResponse {
         message: "If an account exists for this email, a reset link will be sent.".to_string(),
     }))
+}
+
+pub async fn upload_driving_license(
+    State(pool): State<PgPool>,
+    auth_user: auth::AuthUser,
+    mut multipart: Multipart,
+) -> Result<(StatusCode, Json<User>), AppError> {
+    let mut uploaded_file: Option<(String, String, Vec<u8>)> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|error| AppError::BadRequest(format!("Invalid document upload: {error}")))?
+    {
+        if field.name() != Some("file") {
+            continue;
+        }
+
+        let file_name = field
+            .file_name()
+            .map(str::to_string)
+            .unwrap_or_else(|| "permis".to_string());
+        let mime_type = field
+            .content_type()
+            .map(str::to_string)
+            .unwrap_or_else(|| "application/octet-stream".to_string());
+        let content = field
+            .bytes()
+            .await
+            .map_err(|error| AppError::BadRequest(format!("Invalid document bytes: {error}")))?
+            .to_vec();
+
+        uploaded_file = Some((file_name, mime_type, content));
+        break;
+    }
+
+    let (file_name, mime_type, content) = uploaded_file
+        .ok_or_else(|| AppError::BadRequest("A driving-license file is required".to_string()))?;
+
+    if content.is_empty() || content.len() > 8 * 1024 * 1024 {
+        return Err(AppError::BadRequest(
+            "The driving-license file must be between 1 byte and 8 MB".to_string(),
+        ));
+    }
+
+    if !matches!(
+        mime_type.as_str(),
+        "image/jpeg" | "image/png" | "image/webp" | "application/pdf"
+    ) {
+        return Err(AppError::BadRequest(
+            "The driving license must be a JPEG, PNG, WebP or PDF file".to_string(),
+        ));
+    }
+
+    let encryption_secret = std::env::var("DOCUMENT_ENCRYPTION_KEY")
+        .or_else(|_| std::env::var("JWT_SECRET"))
+        .map_err(|_| {
+            AppError::Internal(
+                "DOCUMENT_ENCRYPTION_KEY must be configured before document uploads".to_string(),
+            )
+        })?;
+    if encryption_secret.len() < 32 || encryption_secret == "change_me_in_production" {
+        return Err(AppError::Internal(
+            "DOCUMENT_ENCRYPTION_KEY must contain at least 32 secure characters".to_string(),
+        ));
+    }
+
+    let user = db::store_driving_license(
+        &pool,
+        auth_user.0,
+        &file_name,
+        &mime_type,
+        &content,
+        &encryption_secret,
+    )
+    .await?;
+
+    Ok((StatusCode::ACCEPTED, Json(user)))
 }
 
 pub async fn register_partner(
@@ -226,6 +329,97 @@ pub async fn login_partner(
 
     let token = auth::create_jwt(partner.id)?;
     Ok(Json(PartnerAuthResponse { partner, token }))
+}
+
+async fn require_transport_partner(pool: &PgPool, partner_id: Uuid) -> Result<Partner, AppError> {
+    let partner = db::get_partner_by_id(pool, partner_id)
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+    if partner.type_partenaire != "transport" {
+        return Err(AppError::Unauthorized);
+    }
+    Ok(partner)
+}
+
+pub async fn create_company_vehicle(
+    State(pool): State<PgPool>,
+    auth_partner: auth::AuthPartner,
+    Json(req): Json<CreateCompanyVehicleRequest>,
+) -> Result<(StatusCode, Json<CompanyVehicle>), AppError> {
+    require_transport_partner(&pool, auth_partner.0).await?;
+
+    if req.name.trim().is_empty()
+        || req.vehicle_type.trim().is_empty()
+        || req.registration_number.trim().is_empty()
+    {
+        return Err(AppError::BadRequest(
+            "name, vehicleType and registrationNumber are required".to_string(),
+        ));
+    }
+    if req.capacity < 1 || req.hourly_rate < 0.0 {
+        return Err(AppError::BadRequest(
+            "capacity must be positive and hourlyRate cannot be negative".to_string(),
+        ));
+    }
+
+    let vehicle = db::create_company_vehicle(&pool, auth_partner.0, &req).await?;
+    Ok((StatusCode::CREATED, Json(vehicle)))
+}
+
+pub async fn link_company_driver(
+    State(pool): State<PgPool>,
+    auth_partner: auth::AuthPartner,
+    Json(req): Json<LinkCompanyDriverRequest>,
+) -> Result<(StatusCode, Json<CompanyDriver>), AppError> {
+    require_transport_partner(&pool, auth_partner.0).await?;
+    let driver = db::link_company_driver(&pool, auth_partner.0, &req).await?;
+    Ok((StatusCode::CREATED, Json(driver)))
+}
+
+pub async fn list_company_drivers(
+    State(pool): State<PgPool>,
+    auth_partner: auth::AuthPartner,
+) -> Result<Json<Vec<CompanyDriver>>, AppError> {
+    require_transport_partner(&pool, auth_partner.0).await?;
+    let drivers = db::list_company_drivers(&pool, auth_partner.0).await?;
+    Ok(Json(drivers))
+}
+
+pub async fn assign_driver_to_booking(
+    State(pool): State<PgPool>,
+    auth_partner: auth::AuthPartner,
+    Path(booking_id): Path<Uuid>,
+    Json(req): Json<AssignDriverRequest>,
+) -> Result<Json<DriverMission>, AppError> {
+    require_transport_partner(&pool, auth_partner.0).await?;
+    let mission = db::assign_driver_to_booking(
+        &pool,
+        auth_partner.0,
+        booking_id,
+        req.driver_id,
+        req.vehicle_id,
+    )
+    .await?;
+    Ok(Json(mission))
+}
+
+pub async fn get_active_driver_mission(
+    State(pool): State<PgPool>,
+    auth_user: auth::AuthUser,
+) -> Result<Json<Option<DriverMission>>, AppError> {
+    let mission = db::get_active_driver_mission(&pool, auth_user.0).await?;
+    Ok(Json(mission))
+}
+
+pub async fn update_driver_mission_status(
+    State(pool): State<PgPool>,
+    auth_user: auth::AuthUser,
+    Path(ride_id): Path<Uuid>,
+    Json(req): Json<UpdateDriverMissionStatusRequest>,
+) -> Result<Json<DriverMission>, AppError> {
+    let mission =
+        db::update_driver_mission_status(&pool, auth_user.0, ride_id, &req.action).await?;
+    Ok(Json(mission))
 }
 
 pub async fn create_prestation(

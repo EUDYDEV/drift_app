@@ -6,6 +6,7 @@ import '../controllers/pack_journey_controller.dart';
 import '../models/cart_model.dart';
 import '../models/pack_journey_model.dart';
 import '../theme/app_colors.dart';
+import 'driving_license_verification_sheet.dart';
 
 class PackConfiguratorPanel extends StatefulWidget {
   const PackConfiguratorPanel({super.key});
@@ -375,8 +376,14 @@ class _PackConfiguratorPanelState extends State<PackConfiguratorPanel> {
                     : 'Indisponible pour cette formule logistique.',
               ),
               value: controller.withoutDriver,
-              onChanged: (value) {
-                final accepted = controller.updateWithoutDriver(value ?? false);
+              onChanged: (value) async {
+                final wantsSelfDrive = value ?? false;
+                if (wantsSelfDrive) {
+                  final verified = await ensureSelfDriveVerification(context);
+                  if (!verified || !mounted) return;
+                }
+
+                final accepted = controller.updateWithoutDriver(wantsSelfDrive);
                 if (!accepted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(

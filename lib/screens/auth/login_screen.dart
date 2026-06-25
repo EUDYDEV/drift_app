@@ -46,7 +46,11 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       if (success) {
-        Navigator.of(context).pushNamedAndRemoveUntil('/home', (_) => false);
+        final authService = context.read<AuthService>();
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          authService.isDriver ? '/driver-mission' : '/home',
+          (_) => false,
+        );
       } else {
         setState(() {
           _errorMessage =
