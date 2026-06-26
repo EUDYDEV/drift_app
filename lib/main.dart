@@ -87,7 +87,7 @@ class DriFtApp extends StatelessWidget {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          home: const SplashScreen(),
+          home: const _InitialRouteGate(),
           routes: {
             '/home': (context) => const MainNavigationPage(),
             '/login': (context) => const LoginScreen(),
@@ -105,6 +105,13 @@ class DriFtApp extends StatelessWidget {
             return child ?? const SizedBox.shrink();
           },
           onGenerateRoute: (settings) {
+            if (settings.name == '/admin' ||
+                settings.name?.startsWith('/admin-dashboard') == true) {
+              return MaterialPageRoute(
+                builder: (context) => const ItMasterDashboardPage(),
+              );
+            }
+
             // Gérer les deep links
             if (settings.name?.startsWith('driftapp://location') == true) {
               final uri = Uri.parse(settings.name!);
@@ -132,5 +139,22 @@ class DriFtApp extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+class _InitialRouteGate extends StatelessWidget {
+  const _InitialRouteGate();
+
+  @override
+  Widget build(BuildContext context) {
+    final hashRoute = Uri.base.fragment.trim();
+    if (hashRoute == '/admin' ||
+        hashRoute == 'admin' ||
+        hashRoute.startsWith('/admin-dashboard') ||
+        hashRoute.startsWith('admin-dashboard')) {
+      return const ItMasterDashboardPage();
+    }
+
+    return const SplashScreen();
   }
 }

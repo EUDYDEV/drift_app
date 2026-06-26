@@ -206,9 +206,12 @@ pub async fn master_creator_login(
     State(pool): State<PgPool>,
     Json(req): Json<MasterCreatorLoginRequest>,
 ) -> Result<Json<AdminAuthResponse>, AppError> {
-    let expected_key = std::env::var("MASTER_CREATOR_KEY").map_err(|_| {
+    let expected_key_raw = std::env::var("MASTER_CREATOR_KEY").map_err(|_| {
         AppError::Internal("MASTER_CREATOR_KEY is not configured on the backend".to_string())
     })?;
+    let submitted_key_raw = req.master_creator_key;
+    let expected_key = expected_key_raw.trim().to_lowercase();
+    let submitted_key = submitted_key_raw.trim().to_lowercase();
 
     if expected_key.len() != 64 {
         return Err(AppError::Internal(
@@ -216,7 +219,18 @@ pub async fn master_creator_login(
         ));
     }
 
-    if !constant_time_eq(req.master_creator_key.as_bytes(), expected_key.as_bytes()) {
+    tracing::warn!(
+        target: "drift_admin_auth",
+        received_master_creator_key = %submitted_key_raw,
+        env_master_creator_key = %expected_key_raw,
+        received_raw_len = submitted_key_raw.len(),
+        env_raw_len = expected_key_raw.len(),
+        received_normalized_len = submitted_key.len(),
+        env_normalized_len = expected_key.len(),
+        "MASTER_CREATOR_KEY debug comparison - remove or disable this log before production"
+    );
+
+    if !constant_time_eq(submitted_key.as_bytes(), expected_key.as_bytes()) {
         insert_audit_event(
             &pool,
             None,
