@@ -21,12 +21,17 @@ class ApiConfig {
       );
     }
 
-    if (kIsWeb && uri.scheme != 'https') {
+    if (kIsWeb && uri.scheme != 'https' && !_isLocalDevelopmentHost(uri)) {
       throw StateError(
-        'API_BASE_URL doit utiliser HTTPS pour une application Web.',
+        'API_BASE_URL doit utiliser HTTPS pour une application Web publique.',
       );
     }
 
     return configuredUrl.trim().replaceFirst(RegExp(r'/+$'), '');
+  }
+
+  static bool _isLocalDevelopmentHost(Uri uri) {
+    final host = uri.host.toLowerCase();
+    return host == 'localhost' || host == '127.0.0.1' || host == '::1';
   }
 }
