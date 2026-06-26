@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use axum::extract::FromRequestParts;
 use axum::http::{header::AUTHORIZATION, request::Parts, StatusCode};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 pub struct AuthUser(pub Uuid);
@@ -30,27 +31,80 @@ fn extract_auth_subject(parts: &Parts) -> Result<Uuid, (StatusCode, String)> {
 }
 
 #[async_trait]
-impl<S> FromRequestParts<S> for AuthUser
-where
-    S: Send + Sync,
-{
+impl FromRequestParts<PgPool> for AuthUser {
     type Rejection = (StatusCode, String);
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        Ok(AuthUser(extract_auth_subject(parts)?))
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &PgPool,
+    ) -> Result<Self, Self::Rejection> {
+        let user_id = extract_auth_subject(parts)?;
+        ensure_user_session_is_active(state, user_id).await?;
+        Ok(AuthUser(user_id))
     }
 }
 
 #[async_trait]
-impl<S> FromRequestParts<S> for AuthPartner
-where
-    S: Send + Sync,
-{
+impl FromRequestParts<PgPool> for AuthPartner {
     type Rejection = (StatusCode, String);
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+    async fn from_request_parts(
+        parts: &mut Parts,
+        _state: &PgPool,
+    ) -> Result<Self, Self::Rejection> {
         Ok(AuthPartner(extract_auth_subject(parts)?))
     }
+}
+
+async fn ensure_user_session_is_active(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<(), (StatusCode, String)> {
+    let user_state = sqlx::query_as::<_, (bool,)>(
+        "SELECT is_restricted
+         FROM users
+         WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "Unable to validate session".to_string(),
+        )
+    })?
+    .ok_or((StatusCode::UNAUTHORIZED, "Unknown user".to_string()))?;
+
+    if user_state.0 {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "User account is restricted".to_string(),
+        ));
+    }
+
+    let revoked = sqlx::query_as::<_, (Uuid,)>(
+        "SELECT id
+         FROM admin_token_revocations
+         WHERE user_id = $1
+           AND (expires_at IS NULL OR expires_at > now())
+         LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|_| {
+        (
+            StatusCode::UNAUTHORIZED,
+            "Unable to validate session revocation".to_string(),
+        )
+    })?;
+
+    if revoked.is_some() {
+        return Err((StatusCode::UNAUTHORIZED, "Session revoked".to_string()));
+    }
+
+    Ok(())
 }
 
 pub fn hash_password(password: &str) -> anyhow::Result<String> {
@@ -72,9 +126,13 @@ pub fn verify_password(password: &str, hash: &str) -> anyhow::Result<bool> {
 }
 
 pub fn create_jwt(user_id: Uuid) -> anyhow::Result<String> {
+    create_jwt_with_ttl(user_id, 7 * 24 * 60 * 60)
+}
+
+pub fn create_jwt_with_ttl(user_id: Uuid, ttl_seconds: i64) -> anyhow::Result<String> {
     let claims = JwtClaims {
         sub: user_id.to_string(),
-        exp: chrono::Utc::now().timestamp() + (7 * 24 * 60 * 60), // 7 days
+        exp: chrono::Utc::now().timestamp() + ttl_seconds,
     };
     encode_claims(&claims)
 }

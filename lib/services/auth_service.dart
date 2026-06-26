@@ -32,6 +32,18 @@ class AuthService extends ChangeNotifier {
   String get userEmail => _userEmail;
   String get userRole => _userRole;
   bool get isDriver => isAuthenticated && _userRole == 'driver';
+  bool get isAdmin =>
+      isAuthenticated &&
+      const {
+        'SUPER_ADMIN',
+        'admin',
+        'developer',
+        'manager',
+        'support',
+        'finance',
+        'security',
+      }.contains(_userRole);
+  bool get isSuperAdmin => isAuthenticated && _userRole == 'SUPER_ADMIN';
   bool get isVip => isAuthenticated && _isVip;
   bool get identityDocumentsVerified =>
       isAuthenticated && _identityDocumentsVerified;
@@ -126,6 +138,38 @@ class AuthService extends ChangeNotifier {
       return true;
     } catch (e) {
       debugPrint('Erreur reseau connexion: $e');
+      return false;
+    }
+  }
+
+  Future<bool> masterCreatorLogin({
+    required String masterCreatorKey,
+  }) async {
+    final url = Uri.parse('$_baseUrl/api/admin/master-login');
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'masterCreatorKey': masterCreatorKey}),
+      );
+
+      if (response.statusCode != 200) {
+        debugPrint(
+          'Echec connexion createur: ${response.statusCode} ${response.body}',
+        );
+        return false;
+      }
+
+      final data = _decodeJson(response.body);
+      await _persistSession(
+        token: data['token'] as String?,
+        userJson: data['user'] as Map<String, dynamic>?,
+        fallbackName: 'Super Admin Drift',
+        fallbackEmail: 'creator@drift.local',
+      );
+      return true;
+    } catch (e) {
+      debugPrint('Erreur connexion createur: $e');
       return false;
     }
   }
