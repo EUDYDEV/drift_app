@@ -76,6 +76,17 @@ class PackTimelineItem {
     this.mandatory = false,
     this.hiddenFromCompanion = false,
     this.alternatives = const <PackTimelineAlternative>[],
+    this.partnerId,
+    this.prestationId,
+    this.partnerName,
+    this.partnerType,
+    this.partnerCity,
+    this.partnerAddress,
+    this.partnerLatitude,
+    this.partnerLongitude,
+    this.serviceType,
+    this.mediaUrls = const <String>[],
+    this.metadata = const <String, dynamic>{},
   });
 
   final String id;
@@ -89,6 +100,17 @@ class PackTimelineItem {
   final bool mandatory;
   final bool hiddenFromCompanion;
   final List<PackTimelineAlternative> alternatives;
+  final String? partnerId;
+  final String? prestationId;
+  final String? partnerName;
+  final String? partnerType;
+  final String? partnerCity;
+  final String? partnerAddress;
+  final double? partnerLatitude;
+  final double? partnerLongitude;
+  final String? serviceType;
+  final List<String> mediaUrls;
+  final Map<String, dynamic> metadata;
 
   PackTimelineItem copyWithAlternative(PackTimelineAlternative alternative) {
     return PackTimelineItem(
@@ -103,6 +125,17 @@ class PackTimelineItem {
       mandatory: mandatory,
       hiddenFromCompanion: hiddenFromCompanion,
       alternatives: alternatives,
+      partnerId: partnerId,
+      prestationId: prestationId,
+      partnerName: partnerName,
+      partnerType: partnerType,
+      partnerCity: partnerCity,
+      partnerAddress: partnerAddress,
+      partnerLatitude: partnerLatitude,
+      partnerLongitude: partnerLongitude,
+      serviceType: serviceType,
+      mediaUrls: mediaUrls,
+      metadata: metadata,
     );
   }
 }

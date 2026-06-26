@@ -76,6 +76,99 @@ class PartnerCatalogService {
     };
   }
 
+  Future<List<PartnerCatalogPrestation>> fetchAvailableByService({
+    required String typeService,
+    String? city,
+    String? cuisineCategory,
+    int? minimumCapacity,
+  }) async {
+    final prestations = await fetchPrestations(typeService: typeService);
+    final normalizedCuisine = _normalizeLabel(cuisineCategory);
+
+    final filtered = prestations.where((prestation) {
+      if (!prestation.isAvailable) {
+        return false;
+      }
+      if (!_matchesCity(prestation, city)) {
+        return false;
+      }
+      if (normalizedCuisine != null &&
+          normalizedCuisine.isNotEmpty &&
+          _normalizeLabel(prestation.cuisineCategory) != normalizedCuisine) {
+        return false;
+      }
+      if (minimumCapacity != null &&
+          minimumCapacity > 0 &&
+          (prestation.capacity ?? 0) < minimumCapacity) {
+        return false;
+      }
+      return true;
+    }).toList(growable: true);
+
+    filtered.sort((a, b) {
+      if (a.partnerIsBoosted != b.partnerIsBoosted) {
+        return a.partnerIsBoosted ? -1 : 1;
+      }
+      final capacityComparison = (a.capacity ?? 0).compareTo(b.capacity ?? 0);
+      if (minimumCapacity != null && capacityComparison != 0) {
+        return capacityComparison;
+      }
+      final priceComparison = a.price.compareTo(b.price);
+      if (priceComparison != 0) {
+        return priceComparison;
+      }
+      return a.name.compareTo(b.name);
+    });
+
+    return filtered;
+  }
+
+  Future<List<PartnerCatalogPrestation>> fetchMealCatalog({
+    String? city,
+    String? cuisineCategory,
+  }) async {
+    final tableMeals = await fetchAvailableByService(
+      typeService: 'table_resto',
+      city: city,
+      cuisineCategory: cuisineCategory,
+    );
+    final deliveryMeals = await fetchAvailableByService(
+      typeService: 'plat_livraison',
+      city: city,
+      cuisineCategory: cuisineCategory,
+    );
+    return _deduplicatePrestations(<PartnerCatalogPrestation>[
+      ...tableMeals,
+      ...deliveryMeals,
+    ]);
+  }
+
+  Future<List<PartnerCatalogPrestation>> fetchActivityCatalog({
+    String? city,
+  }) async {
+    final leisure = await fetchAvailableByService(
+      typeService: 'ticket_jeu',
+      city: city,
+    );
+    final cinema = await fetchAvailableByService(
+      typeService: 'ticket_cinema',
+      city: city,
+    );
+    return _deduplicatePrestations(<PartnerCatalogPrestation>[
+      ...leisure,
+      ...cinema,
+    ]);
+  }
+
+  Future<List<PartnerCatalogPrestation>> fetchFleetCatalog({
+    String? city,
+  }) {
+    return fetchAvailableByService(
+      typeService: 'location_voiture',
+      city: city,
+    );
+  }
+
   Future<List<Hotel>> fetchHotelCatalog({String? city}) async {
     final prestations = await fetchPrestations(typeService: 'chambre_hotel');
     final filtered = prestations
@@ -84,7 +177,8 @@ class PartnerCatalogService {
 
     final grouped = <String, List<PartnerCatalogPrestation>>{};
     for (final prestation in filtered) {
-      grouped.putIfAbsent(prestation.partnerId, () => <PartnerCatalogPrestation>[])
+      grouped
+          .putIfAbsent(prestation.partnerId, () => <PartnerCatalogPrestation>[])
           .add(prestation);
     }
 
@@ -114,9 +208,7 @@ class PartnerCatalogService {
       partnerId: partnerId,
     );
 
-    return prestations
-        .map(_mapRoomFromPrestation)
-        .toList(growable: false);
+    return prestations.map(_mapRoomFromPrestation).toList(growable: false);
   }
 
   Future<List<PartnerCatalogPrestation>> fetchDeliveryCatalog({
@@ -215,7 +307,8 @@ class PartnerCatalogService {
     String? requestedCity,
   }) {
     final primary = group.first;
-    final roomOffers = group.map(_mapRoomFromPrestation).toList(growable: false);
+    final roomOffers =
+        group.map(_mapRoomFromPrestation).toList(growable: false);
 
     final imageUrls = _deduplicateUrls(
       group.expand(_extractImageUrls).toList(growable: false),
@@ -233,8 +326,9 @@ class PartnerCatalogService {
           .toList(growable: false),
     );
 
-    final fallbackCity =
-        requestedCity?.trim().isNotEmpty == true ? requestedCity!.trim() : 'Abidjan';
+    final fallbackCity = requestedCity?.trim().isNotEmpty == true
+        ? requestedCity!.trim()
+        : 'Abidjan';
     final address = _readString(primary.details, 'address') ??
         _readString(primary.details, 'adresse') ??
         primary.partnerLocation.address;
@@ -283,7 +377,9 @@ class PartnerCatalogService {
       isFeatured: primary.partnerIsBoosted,
       type: primary.partnerType,
       imageUrls: imageUrls.isEmpty
-          ? const <String>['https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=800']
+          ? const <String>[
+              'https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?w=800'
+            ]
           : imageUrls,
       video360Urls: video360Urls,
       rooms: roomOffers,
@@ -477,5 +573,25 @@ class PartnerCatalogService {
 
   List<String> _deduplicateUrls(List<String> values) {
     return _deduplicateStrings(values);
+  }
+
+  List<PartnerCatalogPrestation> _deduplicatePrestations(
+    List<PartnerCatalogPrestation> values,
+  ) {
+    final seen = <String>{};
+    final deduped = <PartnerCatalogPrestation>[];
+    for (final value in values) {
+      if (!seen.add(value.id)) {
+        continue;
+      }
+      deduped.add(value);
+    }
+    deduped.sort((a, b) {
+      if (a.partnerIsBoosted != b.partnerIsBoosted) {
+        return a.partnerIsBoosted ? -1 : 1;
+      }
+      return a.name.compareTo(b.name);
+    });
+    return deduped;
   }
 }

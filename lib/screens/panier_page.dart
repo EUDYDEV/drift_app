@@ -43,6 +43,8 @@ class _PanierPageState extends State<PanierPage> {
 
     return Scaffold(
       backgroundColor: AppColors.white,
+      bottomNavigationBar:
+          items.isEmpty ? null : _buildBottomActionBar(context, single),
       body: SafeArea(
         child: Column(
           children: [
@@ -56,32 +58,21 @@ class _PanierPageState extends State<PanierPage> {
                         SizedBox(height: 280, child: _buildEmpty()),
                       ],
                     )
-                  : Stack(
+                  : ListView(
+                      padding: const EdgeInsets.only(bottom: 32),
                       children: [
-                        ListView(
-                          padding: const EdgeInsets.only(bottom: 180),
-                          children: [
-                            const PackConfiguratorPanel(),
-                            if (shortActivity != null)
-                              _buildAiSuggestionsBanner(shortActivity),
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 20),
-                              child: Column(
-                                children: [
-                                  ...items.map((item) => _buildCartCard(item)),
-                                  const SizedBox(height: 12),
-                                  _buildTotalBlock(),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        Positioned(
-                          bottom: 20,
-                          left: 20,
-                          right: 20,
-                          child: _buildActions(context, single),
+                        const PackConfiguratorPanel(),
+                        if (shortActivity != null)
+                          _buildAiSuggestionsBanner(shortActivity),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Column(
+                            children: [
+                              ...items.map((item) => _buildCartCard(item)),
+                              const SizedBox(height: 12),
+                              _buildTotalBlock(),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -541,6 +532,31 @@ class _PanierPageState extends State<PanierPage> {
   }
 
   // ─── Panier vide ──────────────────────────────────────────────────────────
+  Widget _buildBottomActionBar(BuildContext context, bool single) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 14),
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          border: Border(
+            top: BorderSide(
+              color: Colors.grey.withValues(alpha: 0.14),
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.08),
+              blurRadius: 18,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: _buildActions(context, single),
+      ),
+    );
+  }
+
   Widget _buildEmpty() {
     return Center(
       child: Column(
