@@ -139,7 +139,7 @@ class MenuDrawer extends StatelessWidget {
             height: 50,
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              gradient: AppColors.blueViolet,
+              gradient: AppColors.driftCorporate,
             ),
             child: const Icon(Icons.person, color: Colors.white, size: 28),
           ),

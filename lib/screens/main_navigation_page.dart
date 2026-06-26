@@ -80,7 +80,8 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   Widget _buildNav(BuildContext context) {
     final bottom = MediaQuery.of(context).padding.bottom;
     return Padding(
-      padding: EdgeInsets.only(left: 14, right: 14, bottom: bottom + 10, top: 6),
+      padding:
+          EdgeInsets.only(left: 14, right: 14, bottom: bottom + 10, top: 6),
       child: Container(
         height: 66,
         decoration: BoxDecoration(
@@ -110,7 +111,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
                 MainNavigationController.experiencesIndex,
                 Icons.auto_awesome_outlined,
                 Icons.auto_awesome,
-                'Experiences',
+                'Explorer',
               ),
             ),
             Expanded(
@@ -143,7 +144,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -156,12 +157,21 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
                   )
                 : Icon(outlined, size: 23, color: Colors.grey[400]),
             const SizedBox(height: 2),
-            Text(
-              label,
-              style: GoogleFonts.montserrat(
-                fontSize: 9,
-                fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-                color: active ? AppColors.gradientBlue : Colors.grey[400],
+            SizedBox(
+              width: double.infinity,
+              height: 12,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: GoogleFonts.montserrat(
+                    fontSize: active ? 9 : 8.5,
+                    fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+                    color: active ? AppColors.gradientBlue : Colors.grey[400],
+                  ),
+                ),
               ),
             ),
           ],
@@ -175,7 +185,8 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     final count = CartModel.itemCount.value;
 
     return GestureDetector(
-      onTap: () => _navigationController.goTo(MainNavigationController.packIndex),
+      onTap: () =>
+          _navigationController.goTo(MainNavigationController.packIndex),
       behavior: HitTestBehavior.opaque,
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -225,12 +236,21 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
             ],
           ),
           const SizedBox(height: 2),
-          Text(
-            'Pack',
-            style: GoogleFonts.montserrat(
-              fontSize: 9,
-              fontWeight: active ? FontWeight.w700 : FontWeight.w400,
-              color: active ? AppColors.gradientBlue : Colors.grey[400],
+          SizedBox(
+            width: double.infinity,
+            height: 12,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                'Pack',
+                maxLines: 1,
+                softWrap: false,
+                style: GoogleFonts.montserrat(
+                  fontSize: active ? 9 : 8.5,
+                  fontWeight: active ? FontWeight.w700 : FontWeight.w400,
+                  color: active ? AppColors.gradientBlue : Colors.grey[400],
+                ),
+              ),
             ),
           ),
         ],

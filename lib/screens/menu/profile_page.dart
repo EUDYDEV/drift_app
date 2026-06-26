@@ -31,7 +31,9 @@ class _ProfilePageState extends State<ProfilePage> {
 
     return Scaffold(
       backgroundColor: AppColors.white,
-      body: auth.isAuthenticated ? _buildProfileContent(context) : _buildLoginPrompt(context),
+      body: auth.isAuthenticated
+          ? _buildProfileContent(context)
+          : _buildLoginPrompt(context),
     );
   }
 
@@ -44,19 +46,20 @@ class _ProfilePageState extends State<ProfilePage> {
           const SizedBox(height: 20),
           _buildSection('Informations personnelles', [
             _InfoRow(
-              Icons.person_outline,
-              'Nom complet',
-              context.watch<AuthService>().userName.isNotEmpty
-                  ? context.watch<AuthService>().userName
-                  : 'Utilisateur'),
+                Icons.person_outline,
+                'Nom complet',
+                context.watch<AuthService>().userName.isNotEmpty
+                    ? context.watch<AuthService>().userName
+                    : 'Utilisateur'),
             _InfoRow(
-              Icons.email_outlined,
-              'Email',
-              context.watch<AuthService>().userEmail.isNotEmpty
-                  ? context.watch<AuthService>().userEmail
-                  : 'Non renseigné'),
+                Icons.email_outlined,
+                'Email',
+                context.watch<AuthService>().userEmail.isNotEmpty
+                    ? context.watch<AuthService>().userEmail
+                    : 'Non renseigné'),
             const _InfoRow(Icons.phone_outlined, 'Téléphone', 'Non renseigné'),
-            const _InfoRow(Icons.location_on_outlined, 'Ville', 'Non renseigné'),
+            const _InfoRow(
+                Icons.location_on_outlined, 'Ville', 'Non renseigné'),
           ]),
           const SizedBox(height: 16),
           _buildSection('Préférences', [
@@ -69,11 +72,11 @@ class _ProfilePageState extends State<ProfilePage> {
             child: Container(
               height: 52,
               decoration: BoxDecoration(
-                gradient: AppColors.blueViolet,
+                gradient: AppColors.driftCorporate,
                 borderRadius: BorderRadius.circular(26),
                 boxShadow: [
                   BoxShadow(
-                    color: AppColors.gradientBlue.withValues(alpha: 0.35),
+                    color: AppColors.orange.withValues(alpha: 0.26),
                     blurRadius: 14,
                     offset: const Offset(0, 5),
                   ),
@@ -110,7 +113,7 @@ class _ProfilePageState extends State<ProfilePage> {
             right: 24,
           ),
           decoration: const BoxDecoration(
-            gradient: AppColors.blueViolet,
+            gradient: AppColors.driftCorporate,
             borderRadius: BorderRadius.only(
               bottomLeft: Radius.circular(36),
               bottomRight: Radius.circular(36),
@@ -145,7 +148,11 @@ class _ProfilePageState extends State<ProfilePage> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.start,
               children: [
-                const Icon(Icons.lock_outline, size: 80, color: Color(0xFF1E90FF)),
+                const Icon(
+                  Icons.lock_outline,
+                  size: 80,
+                  color: AppColors.orange,
+                ),
                 const SizedBox(height: 24),
                 Text(
                   'Accès réservé',
@@ -171,7 +178,9 @@ class _ProfilePageState extends State<ProfilePage> {
                   height: 52,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.blueViolet.colors.first,
+                      backgroundColor: AppColors.orange,
+                      foregroundColor: Colors.white,
+                      shadowColor: AppColors.orange.withValues(alpha: 0.35),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(24),
                       ),
@@ -208,7 +217,7 @@ class _ProfilePageState extends State<ProfilePage> {
         bottom: 32,
       ),
       decoration: const BoxDecoration(
-        gradient: AppColors.blueViolet,
+        gradient: AppColors.driftCorporate,
         borderRadius: BorderRadius.only(
           bottomLeft: Radius.circular(36),
           bottomRight: Radius.circular(36),
@@ -321,7 +330,7 @@ class _ProfilePageState extends State<ProfilePage> {
         children: [
           ShaderMask(
             blendMode: BlendMode.srcIn,
-            shaderCallback: (b) => AppColors.blueViolet.createShader(b),
+            shaderCallback: (b) => AppColors.driftCorporate.createShader(b),
             child: Text(
               value,
               style: GoogleFonts.montserrat(
@@ -406,7 +415,7 @@ class _InfoRow extends StatelessWidget {
         children: [
           ShaderMask(
             blendMode: BlendMode.srcIn,
-            shaderCallback: (b) => AppColors.blueViolet.createShader(b),
+            shaderCallback: (b) => AppColors.driftCorporate.createShader(b),
             child: Icon(icon, size: 20, color: Colors.white),
           ),
           const SizedBox(width: 14),

@@ -9,6 +9,8 @@ class AppColors {
 
   // Prestige / CTA
   static const Color orange = Color(0xFFFF7F0E);
+  static const Color corporateBlack = Color(0xFF151119);
+  static const Color corporatePurple = Color(0xFF321B4F);
 
   // Fonds
   static const Color white = Color(0xFFFFFFFF);
@@ -33,5 +35,12 @@ class AppColors {
     colors: [gradientBlue, gradientPurple],
     begin: Alignment.topCenter,
     end: Alignment.bottomCenter,
+  );
+
+  static const LinearGradient driftCorporate = LinearGradient(
+    colors: [corporateBlack, corporatePurple, orange],
+    stops: [0.0, 0.72, 1.0],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
   );
 }
