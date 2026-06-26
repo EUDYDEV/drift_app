@@ -91,6 +91,7 @@ class DriFtApp extends StatelessWidget {
           routes: {
             '/home': (context) => const MainNavigationPage(),
             '/login': (context) => const LoginScreen(),
+            '/admin': (context) => const ItMasterDashboardPage(),
             '/admin-dashboard': (context) => const ItMasterDashboardPage(),
             '/driver-mission': (context) => const DriverMissionScreen(),
           },
