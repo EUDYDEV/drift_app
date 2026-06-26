@@ -10,6 +10,7 @@ use axum::{routing::get, Json, Router};
 use serde_json::json;
 use sqlx::{migrate::Migrator, PgPool};
 use std::net::SocketAddr;
+use tower_http::cors::CorsLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
@@ -41,6 +42,7 @@ async fn main() -> anyhow::Result<()> {
         .nest("/reservations", routes::reservation_routes())
         .nest("/payments", payments::payment_routes())
         .nest("/pack", routes::pack_routes())
+        .layer(CorsLayer::permissive())
         .with_state(pool.clone());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8080));

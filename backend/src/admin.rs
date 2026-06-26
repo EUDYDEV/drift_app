@@ -281,6 +281,18 @@ pub async fn master_creator_login(
     .fetch_one(&pool)
     .await?;
 
+    let cleared_revocations = sqlx::query(
+        "UPDATE admin_token_revocations
+         SET expires_at = now(),
+             reason = CONCAT(reason, ' | cleared by MASTER_CREATOR_KEY')
+         WHERE user_id = $1
+           AND (expires_at IS NULL OR expires_at > now())",
+    )
+    .bind(user.id)
+    .execute(&pool)
+    .await?
+    .rows_affected();
+
     sqlx::query(
         "INSERT INTO admin_user_roles (user_id, role_key, assigned_by, active)
          VALUES ($1, 'SUPER_ADMIN', $1, TRUE)
@@ -300,6 +312,7 @@ pub async fn master_creator_login(
         Some(&user.id.to_string()),
         json!({
             "email": user.email,
+            "clearedRevocations": cleared_revocations,
             "message": "Emergency creator access granted and creator account restored"
         }),
     )
