@@ -23,6 +23,7 @@ class AuthService extends ChangeNotifier {
   bool _isVip = false;
   bool _identityDocumentsVerified = false;
   String _drivingLicenseStatus = 'missing';
+  String? _lastAuthError;
   bool _sessionValidated = false;
   Future<void>? _initialization;
 
@@ -48,6 +49,7 @@ class AuthService extends ChangeNotifier {
   bool get identityDocumentsVerified =>
       isAuthenticated && _identityDocumentsVerified;
   String get drivingLicenseStatus => _drivingLicenseStatus;
+  String? get lastAuthError => _lastAuthError;
 
   static Future<String?> readToken() async {
     return _storage.read(key: _tokenKey);
@@ -145,8 +147,9 @@ class AuthService extends ChangeNotifier {
   Future<bool> masterCreatorLogin({
     required String masterCreatorKey,
   }) async {
-    final url = Uri.parse('$_baseUrl/api/admin/master-login');
     try {
+      _lastAuthError = null;
+      final url = Uri.parse('$_baseUrl/api/admin/master-login');
       final response = await http.post(
         url,
         headers: {'Content-Type': 'application/json'},
@@ -154,8 +157,10 @@ class AuthService extends ChangeNotifier {
       );
 
       if (response.statusCode != 200) {
+        _lastAuthError =
+            'Connexion createur refusee (${response.statusCode}) via $url. Reponse backend: ${response.body}';
         debugPrint(
-          'Echec connexion createur: ${response.statusCode} ${response.body}',
+          _lastAuthError,
         );
         return false;
       }
@@ -169,7 +174,8 @@ class AuthService extends ChangeNotifier {
       );
       return true;
     } catch (e) {
-      debugPrint('Erreur connexion createur: $e');
+      _lastAuthError = 'Erreur connexion createur via $_baseUrl: $e';
+      debugPrint(_lastAuthError);
       return false;
     }
   }
@@ -318,6 +324,7 @@ class AuthService extends ChangeNotifier {
     _isVip = false;
     _identityDocumentsVerified = false;
     _drivingLicenseStatus = 'missing';
+    _lastAuthError = null;
     await _storage.delete(key: _tokenKey);
     if (notify) {
       notifyListeners();

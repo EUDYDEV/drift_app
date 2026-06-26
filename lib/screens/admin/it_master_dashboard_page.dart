@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import '../../config/api_config.dart';
 import '../../models/admin_dashboard_model.dart';
 import '../../services/admin_service.dart';
 import '../../services/auth_service.dart';
@@ -260,6 +261,14 @@ class _ItMasterDashboardPageState extends State<ItMasterDashboardPage> {
                     height: 1.45,
                   ),
                 ),
+                const SizedBox(height: 10),
+                SelectableText(
+                  'API appelee: ${ApiConfig.baseUrl}/api/admin/master-login',
+                  style: TextStyle(
+                    color: theme.colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
                 const SizedBox(height: 18),
                 TextField(
                   controller: _masterKeyController,
@@ -280,8 +289,9 @@ class _ItMasterDashboardPageState extends State<ItMasterDashboardPage> {
                               _masterKeyController.text.trim(),
                             );
                             if (!ok) {
-                              throw const AdminUiException(
-                                'Cle refusee par le backend.',
+                              throw AdminUiException(
+                                auth.lastAuthError ??
+                                    'Cle refusee par le backend.',
                               );
                             }
                             await auth.refreshProfile();
